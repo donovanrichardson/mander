@@ -6,3 +6,13 @@ con = psycopg2.connect(
     user='',
     password=''
 )
+
+cur = con.cursor()
+
+cur.execute('select * from node')
+rows = cur.fetchall()
+print(rows)
+
+cur.close()
+
+con.close()
