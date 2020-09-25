@@ -7,12 +7,14 @@ con = psycopg2.connect(
     password=''
 )
 
-cur = con.cursor()
+con.autocommit = True
 
-cur.execute('select * from node')
-rows = cur.fetchall()
-print(rows)
+# cur = con.cursor()
 
-cur.close()
+# cur.execute('select * from node')
+# rows = cur.fetchall()
+# print(rows)
 
-con.close()
+# cur.close()
+
+# # con.close()
