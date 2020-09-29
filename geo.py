@@ -25,11 +25,11 @@ def exe_fetchone(query):
 # from matplotlib.collections import LineCollection
 # https://www.timlrx.com/2019/01/05/cleaning-openstreetmap-intersections-in-python/
 
-address = '731 Park Avenue, Huntington NY, 11743'
-G = ox.get_undirected(ox.graph_from_address(address, network_type='drive', dist=3000, retain_all=True))
+# address = '731 Park Avenue, Huntington NY, 11743'
+# G = ox.get_undirected(ox.graph_from_address(address, network_type='drive', dist=3000, retain_all=True))
 
-fig, ax = ox.plot_graph(G, figsize=(10,10), node_color='orange', node_size=30,
-node_zorder=2, node_edgecolor='k')
+# fig, ax = ox.plot_graph(G, figsize=(10,10), node_color='orange', node_size=30,
+# node_zorder=2, node_edgecolor='k')
 
 # for u, v ,keys, data in G.edges(data=True, keys=True):
 
@@ -58,27 +58,27 @@ node_zorder=2, node_edgecolor='k')
 
 
 with con.cursor() as cursor:
-    psycopg2.extras.execute_values(cursor, """
-        INSERT INTO node(id, lat, lon) VALUES %s;
-    """, ((
-        n,
-        data['y'],
-        data['x']
-    ) for n, data, in G.nodes(data=True)))
-    psycopg2.extras.execute_values(cursor, """
-        INSERT INTO graph_phase(phase, node_id, parent) VALUES %s;
-    """, ((
-        0,
-        n,
-        n
-    ) for n, data, in G.nodes(data=True)))
-    psycopg2.extras.execute_values(cursor, """
-        INSERT INTO edge("from", "to", length) VALUES %s;
-    """, ((
-        u,
-        v,
-        data['length']
-    ) for u, v ,keys, data in G.edges(data=True, keys=True)))
+    # psycopg2.extras.execute_values(cursor, """
+    #     INSERT INTO node(id, lat, lon) VALUES %s;
+    # """, ((
+    #     n,
+    #     data['y'],
+    #     data['x']
+    # ) for n, data, in G.nodes(data=True)))
+    # psycopg2.extras.execute_values(cursor, """
+    #     INSERT INTO graph_phase(phase, node_id, parent) VALUES %s;
+    # """, ((
+    #     0,
+    #     n,
+    #     n
+    # ) for n, data, in G.nodes(data=True)))
+    # psycopg2.extras.execute_values(cursor, """
+    #     INSERT INTO edge("from", "to", length) VALUES %s;
+    # """, ((
+    #     u,
+    #     v,
+    #     data['length']
+    # ) for u, v ,keys, data in G.edges(data=True, keys=True)))
     ph = 0
     while(len(exe_fetch(f"select distinct parent from graph_phase where phase = {ph}")) > 1):
         last = exe_fetch(f"select * from graph_phase where phase = {ph}")
@@ -110,7 +110,9 @@ with con.cursor() as cursor:
         while(True):
 
             cursor.execute(f"""
-            select edge.id, fromphase.parent, tophase.parent from edge 
+            select edge.id, fromphase.parent, tophase.parent, least(coinc_f,coinc_t) as coinc from edge join 
+            (select node.id, count(*) as coinc_f from node join edge as fromcoinc on fromcoinc.from = node.id or fromcoinc.to = node.id group by node.id order by coinc_f) as fromnode on fromnode.id = edge.from
+            join (select node.id, count(*) as coinc_t from node join edge as tocoinc on tocoinc.from = node.id or tocoinc.to = node.id group by node.id order by coinc_t) as tonode on tonode.id = edge.to
             join node as "from" on edge.from = "from".id
             join node as "to" on edge.to = "to".id
             join graph_phase as fromphase on "from".id = fromphase.node_id
@@ -119,8 +121,7 @@ with con.cursor() as cursor:
             where fromphase.parent <> tophase.parent 
             and fromphase.phase={ph} 
             and fromphase.traversed = false
-            order by length
-            limit 1;
+            order by coinc, edge.length;
             """)
             zero = cursor.fetchone()
 
