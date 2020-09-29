@@ -1,1 +1,8 @@
 .vscode/
+shape
+mander.ipynb
+test.py
+.ipynb_checkpoints/geo-checkpoint.py
+.ipynb_checkpoints/mander-checkpoint.ipynb
+__pycache__/db.cpython-38.pyc
+mander1.pgsql
