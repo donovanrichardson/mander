@@ -27,9 +27,10 @@ def exe_fetchone(query):
 
 # address = '731 Park Avenue, Huntington NY, 11743'
 # G = ox.get_undirected(ox.graph_from_address(address, network_type='drive', dist=3000, retain_all=True))
+G = ox.get_undirected(ox.graph_from_place("cambridge ma", network_type='drive', retain_all=True))
 
-# fig, ax = ox.plot_graph(G, figsize=(10,10), node_color='orange', node_size=30,
-# node_zorder=2, node_edgecolor='k')
+fig, ax = ox.plot_graph(G, figsize=(10,10), node_color='orange', node_size=30,
+node_zorder=2, node_edgecolor='k')
 
 # for u, v ,keys, data in G.edges(data=True, keys=True):
 
@@ -53,32 +54,30 @@ def exe_fetchone(query):
 
 # len(ox.get_undirected(G).edges())
 
-# brew install spatialindex
-
 
 
 with con.cursor() as cursor:
-    # psycopg2.extras.execute_values(cursor, """
-    #     INSERT INTO node(id, lat, lon) VALUES %s;
-    # """, ((
-    #     n,
-    #     data['y'],
-    #     data['x']
-    # ) for n, data, in G.nodes(data=True)))
-    # psycopg2.extras.execute_values(cursor, """
-    #     INSERT INTO graph_phase(phase, node_id, parent) VALUES %s;
-    # """, ((
-    #     0,
-    #     n,
-    #     n
-    # ) for n, data, in G.nodes(data=True)))
-    # psycopg2.extras.execute_values(cursor, """
-    #     INSERT INTO edge("from", "to", length) VALUES %s;
-    # """, ((
-    #     u,
-    #     v,
-    #     data['length']
-    # ) for u, v ,keys, data in G.edges(data=True, keys=True)))
+    psycopg2.extras.execute_values(cursor, """
+        INSERT INTO node(id, lat, lon) VALUES %s;
+    """, ((
+        n,
+        data['y'],
+        data['x']
+    ) for n, data, in G.nodes(data=True)))
+    psycopg2.extras.execute_values(cursor, """
+        INSERT INTO graph_phase(phase, node_id, parent) VALUES %s;
+    """, ((
+        0,
+        n,
+        n
+    ) for n, data, in G.nodes(data=True)))
+    psycopg2.extras.execute_values(cursor, """
+        INSERT INTO edge("from", "to", length) VALUES %s;
+    """, ((
+        u,
+        v,
+        data['length']
+    ) for u, v ,keys, data in G.edges(data=True, keys=True)))
     ph = 0
     while(len(exe_fetch(f"select distinct parent from graph_phase where phase = {ph}")) > 1):
         last = exe_fetch(f"select * from graph_phase where phase = {ph}")
@@ -90,12 +89,16 @@ with con.cursor() as cursor:
             join graph_phase as tophase on "to".id = tophase.node_id and fromphase.phase = tophase.phase
             where fromphase.parent <> tophase.parent 
             and fromphase.phase={ph} 
-            and fromphase.traversed = false
-            order by length;
+            and fromphase.traversed = false;
             """) #left out the traversed part
         if(len(working) < 1):
             print("nowork")
             break
+        cursor.execute(
+            f"""
+            insert into network_size (select graph_phase.parent, sum(edge.length) as sum_length from graph_phase join edge on graph_phase.node_id = edge.from or graph_phase.node_id = edge.to where graph_phase.phase={ph} group by graph_phase.parent) on conflict (parent) do update set sum_length=excluded.sum_length;
+            """
+        )
         ph = ph+1
         print(ph, len(working))
         psycopg2.extras.execute_values(cursor, """
@@ -108,21 +111,22 @@ with con.cursor() as cursor:
         print(f"Phase {ph}")
 
         while(True):
-
+            #this is sorting by minimum coincident nodes for the edge, and then by the product of the edge length with the least length of all edges in the same parent for each coincident node. instead the product could be the number of edges that connect two parents in question with that long complicated least.
             cursor.execute(f"""
-            select edge.id, fromphase.parent, tophase.parent, least(coinc_f,coinc_t) as coinc from edge join 
-            (select node.id, count(*) as coinc_f from node join edge as fromcoinc on fromcoinc.from = node.id or fromcoinc.to = node.id group by node.id order by coinc_f) as fromnode on fromnode.id = edge.from
-            join (select node.id, count(*) as coinc_t from node join edge as tocoinc on tocoinc.from = node.id or tocoinc.to = node.id group by node.id order by coinc_t) as tonode on tonode.id = edge.to
+            select edge.id, fromphase.parent, tophase.parent, edge.length * least(fromnetwork.sum_length,  tonetwork.sum_length) as gateway_size from edge
             join node as "from" on edge.from = "from".id
             join node as "to" on edge.to = "to".id
             join graph_phase as fromphase on "from".id = fromphase.node_id
             join graph_phase as tophase on "to".id = tophase.node_id and fromphase.phase = tophase.phase 
+            join network_size as fromnetwork on fromnetwork.parent = fromphase.parent
+            join network_size as tonetwork on tonetwork.parent = tophase.parent
             and fromphase.traversed = tophase.traversed
             where fromphase.parent <> tophase.parent 
-            and fromphase.phase={ph} 
+            and fromphase.phase={ph}
             and fromphase.traversed = false
-            order by coinc, edge.length;
+            order by gateway_size;
             """)
+            #decide whether I should use limit 1
             zero = cursor.fetchone()
 
             if(not zero):
@@ -131,50 +135,6 @@ with con.cursor() as cursor:
             print(exe_fetch(f"""
             update graph_phase set parent = {min(zero[1],zero[2])}, traversed = true where parent in ({zero[1]},{zero[2]}) and phase = {ph} returning *;
             """))
-# shortest = exe_fetch("""
-# select edge.id, edge.from, edge.to from edge 
-# join node as "from" on edge.from = "from".id
-# join node as "to" on edge.to = "to".id
-# join graph_phase as fromphase on "from".id = fromphase.node_id
-# join graph_phase as tophase on "to".id = tophase.node_id and fromphase.phase = tophase.phase
-# where fromphase.parent <> tophase.parent and fromphase.phase=1
-# order by length
-# limit 1;
-# """)[0]
-
-# print(exe_fetch(f"""
-# update graph_phase set parent = {min(shortest[1],shortest[2])} where node_id in ({shortest[1]},{shortest[2]}) and phase = {1} returning *;
-# """))
-
-# with con.cursor() as cursor:
-#     while(True):
-
-        # cursor.execute("""
-        # select edge.id, edge.from, edge.to from edge 
-        # join node as "from" on edge.from = "from".id
-        # join node as "to" on edge.to = "to".id
-        # join graph_phase as fromphase on "from".id = fromphase.node_id
-        # join graph_phase as tophase on "to".id = tophase.node_id and fromphase.phase = tophase.phase 
-        # and fromphase.traversed = tophase.traversed
-        # where fromphase.parent <> tophase.parent 
-        # and fromphase.phase=1 
-        # and fromphase.traversed = false
-        # order by length
-        # limit 1;
-        # """)
-        # zero = cursor.fetchone()
-
-        # if(not zero):
-        #     break
-
-        # print(exe_fetch(f"""
-        # update graph_phase set parent = {min(zero[1],zero[2])}, traversed = true where parent in ({zero[1]},{zero[2]}) and phase = {1} returning *;
-        # """))
-
-
-    # print(len(cursor.fetchall()))
-    # cursor.execute(f"select * from graph_phase where phase = {ph}")
-    # this phasecursor.fetchall())
 
 con.close()
 
@@ -183,5 +143,11 @@ con.close()
 
 # see the traversal 
 # select count(*), parent, phase from graph_phase where traversed group by parent, phase order by phase desc , parent;
+
+#analysis
+# select distinct parent, phase from graph_phase order by parent, phase;
+
+# select min(fromphase.phase) as joinphase, edge.* from edge join graph_phase as fromphase on edge.from = fromphase.node_id join graph_phase as tophase on edge.to = tophase.node_id and tophase.phase =fromphase.phase where fromphase.parent = tophase.parent group by edge.id order by joinphase desc, edge.length desc;
+
 
 # next try graph_from_place for jefferson county ny
