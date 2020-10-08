@@ -110,20 +110,18 @@ with con.cursor() as cursor:
         while(True):
 
             cursor.execute(f"""
-            select edge.id, fromphase.parent, tophase.parent, least(coinc_f,coinc_t) as coinc, 
-            least((select sum(coincedge.length)  as tot_len_f from graph_phase join edge as coincedge on coincedge.from = graph_phase.node_id or coincedge.to = graph_phase.node_id where phase = fromphase.phase and parent = fromphase.parent group by graph_phase.parent order by tot_len_f), 
-            (select sum(coincedge.length)  as tot_len_t from graph_phase join edge as coincedge on coincedge.from = graph_phase.node_id or coincedge.to = graph_phase.node_id where phase = tophase.phase and parent = tophase.parent group by graph_phase.parent order by tot_len_t)) as min_neigh from edge join 
+            select edge.id, fromphase.parent, tophase.parent, least(coinc_f,coinc_t) as coinc from edge join 
             (select node.id, count(*) as coinc_f from node join edge as fromcoinc on fromcoinc.from = node.id or fromcoinc.to = node.id group by node.id order by coinc_f) as fromnode on fromnode.id = edge.from
             join (select node.id, count(*) as coinc_t from node join edge as tocoinc on tocoinc.from = node.id or tocoinc.to = node.id group by node.id order by coinc_t) as tonode on tonode.id = edge.to
             join node as "from" on edge.from = "from".id
             join node as "to" on edge.to = "to".id
             join graph_phase as fromphase on "from".id = fromphase.node_id
-            join graph_phase as tophase on "to".id = tophase.node_id and fromphase.phase = tophase.phase
-            --and fromphase.traversed = tophase.traversed
+            join graph_phase as tophase on "to".id = tophase.node_id and fromphase.phase = tophase.phase 
+            and fromphase.traversed = tophase.traversed
             where fromphase.parent <> tophase.parent 
             and fromphase.phase={ph} 
             and fromphase.traversed = false
-            order by coinc, min_neigh;
+            order by coinc, edge.length;
             """)
             zero = cursor.fetchone()
 
