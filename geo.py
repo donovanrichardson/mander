@@ -170,3 +170,17 @@ con.close()
             # and fromphase.traversed = false
             # group by edge.id
             # order by gateway_size;
+
+# for i in edgescore:
+#     G[i[1]][i[2]][0]['color'] = i[0]
+
+# mycolors = []
+# graph_edges = G.edges
+#max_phase = exe_fetchone("select max(phase) from graph_phase")
+# for i in graph_edges:
+#     G[i[0]][i[1]][i[2]]['color'] = exe_fetchone(f"select min(fromphase.phase) from edge join graph_phase as fromphase on edge.from = fromphase.node_id join graph_phase as tophase on edge.to = tophase.node_id and tophase.phase =fromphase.phase where fromphase.parent = tophase.parent and edge.from = {i[0]} and edge.to = {i[1]} group by edge.id;")[0] / max_phase
+#     mycolors.append(G[i[0]][i[1]][i[2]]['color'])
+
+# ec = ox.plot.get_edge_colors_by_attr(G, attr='color')
+
+# fig, ax = ox.plot_graph(G, figsize=(10,10), node_color='orange', node_size=30, node_zorder=2, node_edgecolor='k', edge_color=ec)
