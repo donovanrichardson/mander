@@ -28,9 +28,9 @@ def get_first(tuple):
 # from matplotlib.collections import LineCollection
 # https://www.timlrx.com/2019/01/05/cleaning-openstreetmap-intersections-in-python/
 
-# address = '731 Park Avenue, Huntington NY, 11743'
-# G = ox.get_undirected(ox.graph_from_address(address, network_type='drive', dist=3000, retain_all=True))
-G = ox.get_undirected(ox.graph_from_place(input(), network_type='drive', retain_all=True))
+address = '731 Park Avenue, Huntington NY, 11743'
+G = ox.get_undirected(ox.graph_from_address(address, network_type='drive', dist=3000, retain_all=True))
+# G = ox.get_undirected(ox.graph_from_place(input(), network_type='drive', retain_all=True))
 
 #don't need to plot this below bc it holds the thing up
 fig, ax = ox.plot_graph(G, figsize=(10,10), node_color='orange', node_size=30,
@@ -107,21 +107,19 @@ with con.cursor() as cursor:
         while(True):
             #this is sorting by minimum coincident nodes for the edge, and then by the product of the edge length with the least length of all edges in the same parent for each coincident node. instead the product could be the number of edges that connect two parents in question with that long complicated least.
             cursor.execute(f"""
-            select edge.id, fromphase.parent, tophase.parent, edge.length * least(fromnetwork.sum_length,  tonetwork.sum_length) as gateway_size, count(combine_edges.id) as combine_size from edge
+            select edge.id, fromphase.parent, tophase.parent, edge.length * least(fromnetwork.sum_length,  tonetwork.sum_length) as gateway_size from edge
             join node as "from" on edge.from = "from".id
             join node as "to" on edge.to = "to".id
             join graph_phase as fromphase on "from".id = fromphase.node_id
             join graph_phase as tophase on "to".id = tophase.node_id and fromphase.phase = tophase.phase 
-            join edge as combine_edges on (combine_edges.from in (fromphase.node_id) or combine_edges.from in (tophase.node_id)) and (combine_edges.to in (fromphase.node_id) or combine_edges.to in (tophase.node_id))
             join network_size as fromnetwork on fromnetwork.parent = fromphase.parent
             join network_size as tonetwork on tonetwork.parent = tophase.parent
             and fromphase.traversed = tophase.traversed
             where fromphase.parent <> tophase.parent 
             and fromphase.phase={ph}
             and fromphase.traversed = false
-            and combine_edges.from <> combine_edges.to
             group by edge.id, fromphase.parent, tophase.parent, fromnetwork.sum_length,  tonetwork.sum_length
-            order by combine_size, gateway_size
+            order by gateway_size
             limit 1;
             """)
             # combine_edges.from <> combine_edges.to prevents culdesacs from messing the procedure up
@@ -151,7 +149,7 @@ with con.cursor() as cursor:
     
     nc = ox.plot.get_node_colors_by_attr(G,attr=4)
 
-    fig2, ax2 = ox.plot_graph(G, figsize=(10,10), node_size=10, node_zorder=2, node_edgecolor='k', node_color=nc)
+    fig2, ax2 = ox.plot_graph(G, figsize=(10,10), node_size=10, node_zorder=2, node_color=nc)
 
 con.close()
 
