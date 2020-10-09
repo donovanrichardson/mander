@@ -145,7 +145,8 @@ with con.cursor() as cursor:
     for i in graph_nodes:
         # print(i)
         for j in range(0, max_phase+1):
-            G.nodes[i][j] = exe_fetchone(f"select parent from graph_phase where node_id = {i} and phase = {j}")[0] % 100
+            parent = exe_fetchone(f"select parent from graph_phase where node_id = {i} and phase = {j}")[0]
+            G.nodes[i][j] =  (100 * (parent % 10)) + (parent % 100)
     
     nc = ox.plot.get_node_colors_by_attr(G,attr=4)
 
