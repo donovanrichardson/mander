@@ -18,6 +18,9 @@ def exe_fetchone(query):
         cursor.execute(query)
         return cursor.fetchone()
 
+def get_first(tuple):
+    return 0 if tuple is None else tuple[0]
+
 # , save_and_show, get_paths_to_simplify
 # from shapely.geometry import Point, LineString, shape, MultiPoint, box, Polygon, MultiLineString, mapping
 # from shapely.ops import linemerge
@@ -33,27 +36,6 @@ G = ox.get_undirected(ox.graph_from_place(input(), network_type='drive', retain_
 fig, ax = ox.plot_graph(G, figsize=(10,10), node_color='orange', node_size=30,
 node_zorder=2, node_edgecolor='k')
 
-# for u, v ,keys, data in G.edges(data=True, keys=True):
-
-#     print(u,v,data['length'], data['osmid'])
-
-# print (G.nodes())
-
-# cur = con.cursor()
-
-# for n, data, in G.nodes(data=True):
-#     print(n, data)
-#     cur.execute(f"insert into node (id, lat, lon) values ({n},{data['y']},{data['x']});")
-#     cur.execute(f"insert into graph_phase (phase, node_id, parent) values ({0},{n},{n});")
-
-# cur.close()
-# con.close()
-
-# for u, v ,keys, data in G.edges(data=True, keys=True):
-#     print(u,v,data['length'], data['osmid'])
-#     cur.execute(f"insert into")
-
-# len(ox.get_undirected(G).edges())
 
 
 
@@ -90,7 +72,8 @@ with con.cursor() as cursor:
             join graph_phase as tophase on "to".id = tophase.node_id and fromphase.phase = tophase.phase
             where fromphase.parent <> tophase.parent 
             and fromphase.phase={ph} 
-            and fromphase.traversed = false;
+            and fromphase.traversed = false
+            limit 1;
             """) #left out the traversed part
         if(len(working) < 1):
             print("nowork")
@@ -100,8 +83,18 @@ with con.cursor() as cursor:
             insert into network_size (select graph_phase.parent, sum(edge.length) as sum_length from graph_phase join edge on graph_phase.node_id = edge.from or graph_phase.node_id = edge.to where graph_phase.phase={ph} group by graph_phase.parent) on conflict (parent) do update set sum_length=excluded.sum_length;
             """
         )
+        
+        print(ph, len(exe_fetch(f"""
+            select edge.id, fromphase.parent, tophase.parent from edge 
+            join node as "from" on edge.from = "from".id
+            join node as "to" on edge.to = "to".id
+            join graph_phase as fromphase on "from".id = fromphase.node_id
+            join graph_phase as tophase on "to".id = tophase.node_id and fromphase.phase = tophase.phase
+            where fromphase.parent <> tophase.parent 
+            and fromphase.phase={ph} 
+            and fromphase.traversed = false;
+        """)))
         ph = ph+1
-        print(ph, len(working))
         psycopg2.extras.execute_values(cursor, """
             INSERT INTO graph_phase("phase", "node_id", "parent") VALUES %s;
         """, ((
@@ -128,9 +121,9 @@ with con.cursor() as cursor:
             and fromphase.traversed = false
             and combine_edges.from <> combine_edges.to
             group by edge.id, fromphase.parent, tophase.parent, fromnetwork.sum_length,  tonetwork.sum_length
-            order by combine_size, gateway_size;
+            order by combine_size, gateway_size
+            limit 1;
             """)
-            #decide whether I should use limit 1
             # combine_edges.from <> combine_edges.to prevents culdesacs from messing the procedure up
             zero = cursor.fetchone()
 
@@ -140,8 +133,28 @@ with con.cursor() as cursor:
             print(exe_fetch(f"""
             update graph_phase set parent = {min(zero[1],zero[2])}, traversed = true where parent in ({zero[1]},{zero[2]}) and phase = {ph} returning *;
             """))
+    
+    # mycolors = []
+    # graph_edges = G.edges
+    # for i in graph_edges:
+    #     G[i[0]][i[1]][i[2]]['color'] = get_first(exe_fetchone(f"select min(fromphase.phase) from edge join graph_phase as fromphase on edge.from = fromphase.node_id join graph_phase as tophase on edge.to = tophase.node_id and tophase.phase =fromphase.phase where fromphase.parent = tophase.parent and edge.from = {i[0]} and edge.to = {i[1]} group by edge.id;"))
+        # mycolors.append(G[i[0]][i[1]][i[2]]['color'])
+
+    # ec = ox.plot.get_edge_colors_by_attr(G, attr='color')
+
+    graph_nodes = G.nodes
+    max_phase = exe_fetchone("select max(phase) from graph_phase")[0]
+    for i in graph_nodes:
+        # print(i)
+        for j in range(0, max_phase+1):
+            G.nodes[i][j] = exe_fetchone(f"select parent from graph_phase where node_id = {i} and phase = {j}")[0] % 100
+    
+    nc = ox.plot.get_node_colors_by_attr(G,attr=4)
+
+    fig2, ax2 = ox.plot_graph(G, figsize=(10,10), node_size=10, node_zorder=2, node_edgecolor='k', node_color=nc)
 
 con.close()
+
 
 # get edge info
 # select min(fromphase.phase) as joinphase, edge.* from edge join graph_phase as fromphase on edge.from = fromphase.node_id join graph_phase as tophase on edge.to = tophase.node_id and tophase.phase =fromphase.phase where fromphase.parent = tophase.parent group by edge.id order by joinphase desc, edge.length desc; 
@@ -174,13 +187,6 @@ con.close()
 # for i in edgescore:
 #     G[i[1]][i[2]][0]['color'] = i[0]
 
-# mycolors = []
-# graph_edges = G.edges
-#max_phase = exe_fetchone("select max(phase) from graph_phase")
-# for i in graph_edges:
-#     G[i[0]][i[1]][i[2]]['color'] = exe_fetchone(f"select min(fromphase.phase) from edge join graph_phase as fromphase on edge.from = fromphase.node_id join graph_phase as tophase on edge.to = tophase.node_id and tophase.phase =fromphase.phase where fromphase.parent = tophase.parent and edge.from = {i[0]} and edge.to = {i[1]} group by edge.id;")[0] / max_phase
-#     mycolors.append(G[i[0]][i[1]][i[2]]['color'])
+# max_phase = exe_fetchone("select max(phase) from graph_phase")[0]
 
-# ec = ox.plot.get_edge_colors_by_attr(G, attr='color')
 
-# fig, ax = ox.plot_graph(G, figsize=(10,10), node_color='orange', node_size=30, node_zorder=2, node_edgecolor='k', edge_color=ec)
