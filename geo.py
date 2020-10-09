@@ -28,9 +28,9 @@ def get_first(tuple):
 # from matplotlib.collections import LineCollection
 # https://www.timlrx.com/2019/01/05/cleaning-openstreetmap-intersections-in-python/
 
-address = '731 Park Avenue, Huntington NY, 11743'
-G = ox.get_undirected(ox.graph_from_address(address, network_type='drive', dist=3000, retain_all=True))
-# G = ox.get_undirected(ox.graph_from_place(input(), network_type='drive', retain_all=True))
+# address = '731 Park Avenue, Huntington NY, 11743'
+# G = ox.get_undirected(ox.graph_from_address(address, network_type='drive', dist=3000, retain_all=True))
+G = ox.get_undirected(ox.graph_from_place(input(), network_type='drive', retain_all=True))
 
 #don't need to plot this below bc it holds the thing up
 fig, ax = ox.plot_graph(G, figsize=(10,10), node_color='orange', node_size=30,
