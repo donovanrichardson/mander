@@ -6,6 +6,7 @@ from geopandas import gpd
 from osmnx import graph_to_gdfs, graph_from_gdfs
 import psycopg2
 import psycopg2.extras
+import csv
 from db import con
 
 # a shortcut to execute a query and return all results
@@ -29,7 +30,8 @@ def get_first(tuple):
 # G = ox.get_undirected(ox.graph_from_address(address, network_type='drive', dist=3000, retain_all=True))
 
 # This is the first statement. It gets a graph from OpenStreetMap based on the geocodable area retrieved from the user.
-G = ox.get_undirected(ox.graph_from_place(input(), network_type='drive', retain_all=True))
+name = input()
+G = ox.get_undirected(ox.graph_from_place(name, network_type='drive', retain_all=True))
 
 #don't need to plot this below bc it holds the thing up
 fig, ax = ox.plot_graph(G, figsize=(10,10), node_color='orange', node_size=30,
@@ -170,13 +172,25 @@ with con.cursor() as cursor:
         # print(i)
         for j in range(0, max_phase+1):
             parent = exe_fetchone(f"select parent from graph_phase where node_id = {i} and phase = {j}")[0]
-            G.nodes[i][j] =  (100 * (parent % 10)) + (parent % 100)
+            G.nodes[i][j] = parent
     
-    # assigns colors based on phase 4 parent (a default)
-    nc = ox.plot.get_node_colors_by_attr(G,attr=4)
+    try:
+        with open(f"{name}.csv", 'w') as csvfile:
+            columns = ['x','y','osmid']
+            for k in range(0, max_phase + 1):
+                columns.append(k)
+            writer = csv.DictWriter(csvfile, fieldnames=columns, extrasaction='ignore')
+            writer.writeheader()
+            for data in G.nodes(data=True):
+                writer.writerow(data[1])
+    except IOError:
+        print("I/O error")
+    
+    # # assigns colors based on phase 4 parent (a default)
+    # nc = ox.plot.get_node_colors_by_attr(G,attr=4)
 
-    # graphs
-    fig2, ax2 = ox.plot_graph(G, figsize=(10,10), node_size=10, node_zorder=2, node_color=nc)
+    # # graphs
+    # fig2, ax2 = ox.plot_graph(G, figsize=(10,10), node_size=10, node_zorder=2, node_color=nc)
 
 con.close()
 
