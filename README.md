@@ -11,7 +11,7 @@ Use `run geo.py` to execute the algorithm. You will be prompted for a name of an
 
 ## Gallery
 
-Below are visualizations of districts created by the algorithm
+Below are visualizations of districts created by the algorithm. The dots represent intersections, while their colors represent district membership. 
 
 ### Cohasset, MA
 ![Cohasset, MA](https://res.cloudinary.com/donovanrichardson/image/upload/v1602607018/cohasset_twzeky.png)
