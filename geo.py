@@ -9,6 +9,9 @@ import psycopg2.extras
 import csv
 from db import con
 
+# for some reason this prevents the db for getting upset with "duplicate values" in candidate_edges. probable a concurrency issue
+con.autocommit = True
+
 # a shortcut to execute a query and return all results
 def exe_fetch(query):
     with con.cursor() as cursor:
