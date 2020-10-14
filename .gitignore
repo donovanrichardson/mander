@@ -12,3 +12,4 @@ dumps
 *.svg
 *.png
 notebooks
+*.csv

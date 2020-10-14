@@ -31,7 +31,10 @@ def get_first(tuple):
 
 # This is the first statement. It gets a graph from OpenStreetMap based on the geocodable area retrieved from the user.
 name = input()
-G = ox.get_undirected(ox.graph_from_place(name, network_type='drive', retain_all=True))
+# G = ox.get_undirected(ox.graph_from_place(name, network_type='drive', retain_all=True))
+# G = ox.get_undirected(ox.graph_from_place(name, custom_filter='["highway"~"motorway|trunk"]', retain_all=True))
+# G = ox.get_undirected(ox.graph_from_place(name, custom_filter='["highway"~"motorway"]', retain_all=True))
+G = ox.get_undirected(ox.graph_from_place(name, custom_filter='["highway"~"primary|trunk"]', retain_all=True))
 
 #don't need to plot this below bc it holds the thing up
 fig, ax = ox.plot_graph(G, figsize=(10,10), node_color='orange', node_size=30,
@@ -87,7 +90,6 @@ with con.cursor() as cursor:
             join graph_phase as tophase on "to".id = tophase.node_id and fromphase.phase = tophase.phase
             where fromphase.parent <> tophase.parent 
             and fromphase.phase={ph} 
-            and fromphase.traversed = false
             limit 1;
             """) #left out the traversed part
         if(len(working) < 1):
@@ -138,7 +140,6 @@ with con.cursor() as cursor:
             where fromphase.parent <> tophase.parent 
             and fromphase.phase={ph}
             and fromphase.traversed = false
-            group by edge.id, fromphase.parent, tophase.parent, fromnetwork.sum_length,  tonetwork.sum_length
             order by gateway_size
             limit 1;
             """)
@@ -228,4 +229,7 @@ con.close()
 
 # max_phase = exe_fetchone("select max(phase) from graph_phase")[0]
 
+# delete from node;
+
+# select count(*), phase from graph_phase where not traversed and phase = (select max(phase) from graph_phase) group by phase;
 
