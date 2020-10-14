@@ -117,6 +117,29 @@ with con.cursor() as cursor:
             and fromphase.traversed = false;
         """)))
 
+        # gets new candidates
+        candidates = exe_fetch(f"""
+        select edge.id, fromphase.node_id, fromphase.parent, tophase.node_id, tophase.parent, edge.length * least(fromnetwork.sum_length,  tonetwork.sum_length) as gateway_size from edge
+        join node as "from" on edge.from = "from".id
+        join node as "to" on edge.to = "to".id
+        join graph_phase as fromphase on "from".id = fromphase.node_id
+        join graph_phase as tophase on "to".id = tophase.node_id and fromphase.phase = tophase.phase 
+        join network_size as fromnetwork on fromnetwork.parent = fromphase.parent
+        join network_size as tonetwork on tonetwork.parent = tophase.parent
+        where fromphase.parent <> tophase.parent 
+        and fromphase.phase={ph};
+        """)
+
+        #deletes old candidates
+        cursor.execute("delete from candidate_edge;")
+
+        #inserts new candidates
+        psycopg2.extras.execute_values(cursor, """
+            INSERT INTO candidate_edge VALUES %s on conflict(edge_id) do update set fromparent=excluded.fromparent, toparent=excluded.toparent, gateway_size=excluded.gateway_size;
+        """, candidates)
+
+        # had the same insert network statement twice lol
+
         # increments phase
         ph = ph+1
         #inserts new graph phase
@@ -132,18 +155,13 @@ with con.cursor() as cursor:
         while(True):
             #the algorithm described above is executed here
             cursor.execute(f"""
-            select edge.id, fromphase.parent, tophase.parent, edge.length * least(fromnetwork.sum_length,  tonetwork.sum_length) as gateway_size from edge
-            join node as "from" on edge.from = "from".id
-            join node as "to" on edge.to = "to".id
-            join graph_phase as fromphase on "from".id = fromphase.node_id
-            join graph_phase as tophase on "to".id = tophase.node_id and fromphase.phase = tophase.phase 
-            join network_size as fromnetwork on fromnetwork.parent = fromphase.parent
-            join network_size as tonetwork on tonetwork.parent = tophase.parent
-            and fromphase.traversed = tophase.traversed
-            where fromphase.parent <> tophase.parent 
-            and fromphase.phase={ph}
-            and fromphase.traversed = false
-            order by gateway_size
+            select candidate_edge.edge_id, candidate_edge.fromparent, candidate_edge.toparent, candidate_edge.gateway_size from candidate_edge
+            join graph_phase as fromphase on candidate_edge.fromphase_id = fromphase.node_id
+            join graph_phase as tophase on candidate_edge.tophase_id = tophase.node_id and tophase.phase = fromphase.phase
+            where fromphase.phase = {ph}
+            and not fromphase.traversed
+            and not tophase.traversed
+            order by candidate_edge.gateway_size
             limit 1;
             """)
             # combine_edges.from <> combine_edges.to prevents culdesacs from messing the procedure up
