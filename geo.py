@@ -13,16 +13,14 @@ from db import con
 con.autocommit = True
 
 # a shortcut to execute a query and return all results
-def exe_fetch(query):
-    with con.cursor() as cursor:
-        cursor.execute(query)
-        return cursor.fetchall()
+def exe_fetch(cursor, query):
+    cursor.execute(query)
+    return cursor.fetchall()
 
 # a shortcut to execute a query and return first result
-def exe_fetchone(query):
-    with con.cursor() as cursor:
-        cursor.execute(query)
-        return cursor.fetchone()
+def exe_fetchone(cursor, query):
+    cursor.execute(query)
+    return cursor.fetchone()
 
 # a safe get[0] for a tuple (or a list)
 def get_first(tuple):
@@ -34,10 +32,10 @@ def get_first(tuple):
 
 # This is the first statement. It gets a graph from OpenStreetMap based on the geocodable area retrieved from the user.
 name = input()
-# G = ox.get_undirected(ox.graph_from_place(name, network_type='drive', retain_all=True))
+G = ox.get_undirected(ox.graph_from_place(name, network_type='drive', retain_all=True))
 # G = ox.get_undirected(ox.graph_from_place(name, custom_filter='["highway"~"motorway|trunk"]', retain_all=True))
 # G = ox.get_undirected(ox.graph_from_place(name, custom_filter='["highway"~"motorway"]', retain_all=True))
-G = ox.get_undirected(ox.graph_from_place(name, custom_filter='["highway"~"primary|trunk"]', retain_all=True))
+# G = ox.get_undirected(ox.graph_from_place(name, custom_filter='["highway"~"primary|trunk"]', retain_all=True))
 
 #don't need to plot this below bc it holds the thing up
 fig, ax = ox.plot_graph(G, figsize=(10,10), node_color='orange', node_size=30,
@@ -83,9 +81,9 @@ with con.cursor() as cursor:
     #then, subgraphs (sets of nodes in graph_phase same parents) will be joined (get the same parent) through nodes which have the smallest product of (length of node * length of join-candidate subgraph with smallest length). These two candidate subgraphs will then be joined under the same parent (using the smallest parent_id) and then all nodes of this new subgraph will become "traversed" = true.
     #the while loop will end when all nodes have the same parent. this is unlikely because in large road network graphs there may be several disconnected subgraphs. It's more likely that the break statement if(len(working) < 1): will cause the loop to end, because there are no nodes that can be further joined.
     # #I just realized that the traversed = false below makes the algo exit too early. 
-    while(len(exe_fetch(f"select distinct parent from graph_phase where phase = {ph}")) > 1):
-        last = exe_fetch(f"select * from graph_phase where phase = {ph}")
-        working = exe_fetch(f"""
+    while(len(exe_fetch(cursor, f"select distinct parent from graph_phase where phase = {ph}")) > 1):
+        last = exe_fetch(cursor, f"select * from graph_phase where phase = {ph}")
+        working = exe_fetch(cursor, f"""
             select edge.id, fromphase.parent, tophase.parent from edge 
             join node as "from" on edge.from = "from".id
             join node as "to" on edge.to = "to".id
@@ -106,7 +104,7 @@ with con.cursor() as cursor:
         )
         
         #don't think this is necessary
-        print(ph, len(exe_fetch(f"""
+        print(ph, len(cursor, exe_fetch(f"""
             select edge.id, fromphase.parent, tophase.parent from edge 
             join node as "from" on edge.from = "from".id
             join node as "to" on edge.to = "to".id
@@ -118,7 +116,7 @@ with con.cursor() as cursor:
         """)))
 
         # gets new candidates
-        candidates = exe_fetch(f"""
+        candidates = exe_fetch(cursor, f"""
         select edge.id, fromphase.node_id, fromphase.parent, tophase.node_id, tophase.parent, edge.length * least(fromnetwork.sum_length,  tonetwork.sum_length) as gateway_size from edge
         join node as "from" on edge.from = "from".id
         join node as "to" on edge.to = "to".id
@@ -174,26 +172,26 @@ with con.cursor() as cursor:
                 break
             
             # prints nodes that are updated
-            print(exe_fetch(f"""
+            print(exe_fetch(cursor, f"""
             update graph_phase set parent = {min(zero[1],zero[2])}, traversed = true where parent in ({zero[1]},{zero[2]}) and phase = {ph} returning *;
             """))
     
     # mycolors = []
     # graph_edges = G.edges
     # for i in graph_edges:
-    #     G[i[0]][i[1]][i[2]]['color'] = get_first(exe_fetchone(f"select min(fromphase.phase) from edge join graph_phase as fromphase on edge.from = fromphase.node_id join graph_phase as tophase on edge.to = tophase.node_id and tophase.phase =fromphase.phase where fromphase.parent = tophase.parent and edge.from = {i[0]} and edge.to = {i[1]} group by edge.id;"))
+    #     G[i[0]][i[1]][i[2]]['color'] = get_first(cursor, exe_fetchone(f"select min(fromphase.phase) from edge join graph_phase as fromphase on edge.from = fromphase.node_id join graph_phase as tophase on edge.to = tophase.node_id and tophase.phase =fromphase.phase where fromphase.parent = tophase.parent and edge.from = {i[0]} and edge.to = {i[1]} group by edge.id;"))
         # mycolors.append(G[i[0]][i[1]][i[2]]['color'])
 
     # ec = ox.plot.get_edge_colors_by_attr(G, attr='color')
 
 
     graph_nodes = G.nodes
-    max_phase = exe_fetchone("select max(phase) from graph_phase")[0]
+    max_phase = exe_fetchone(cursor, "select max(phase) from graph_phase")[0]
     # adds parent properties from the "graph_nodes" table in the DB for each node in the greaph
     for i in graph_nodes:
         # print(i)
         for j in range(0, max_phase+1):
-            parent = exe_fetchone(f"select parent from graph_phase where node_id = {i} and phase = {j}")[0]
+            parent = exe_fetchone(cursor, f"select parent from graph_phase where node_id = {i} and phase = {j}")[0]
             G.nodes[i][j] = parent
     
     try:
@@ -248,7 +246,7 @@ con.close()
 # for i in edgescore:
 #     G[i[1]][i[2]][0]['color'] = i[0]
 
-# max_phase = exe_fetchone("select max(phase) from graph_phase")[0]
+# max_phase = exe_fetchone(cursor, "select max(phase) from graph_phase")[0]
 
 # delete from node;
 
