@@ -104,7 +104,7 @@ with con.cursor() as cursor:
         )
         
         #don't think this is necessary
-        print(ph, len(cursor, exe_fetch(f"""
+        print(ph, len(exe_fetch(cursor, f"""
             select edge.id, fromphase.parent, tophase.parent from edge 
             join node as "from" on edge.from = "from".id
             join node as "to" on edge.to = "to".id
@@ -117,7 +117,7 @@ with con.cursor() as cursor:
 
         # gets new candidates
         candidates = exe_fetch(cursor, f"""
-        select edge.id, fromphase.node_id, fromphase.parent, tophase.node_id, tophase.parent, edge.length * least(fromnetwork.sum_length,  tonetwork.sum_length) as gateway_size from edge
+        select edge.id, fromphase.node_id, fromphase.parent, tophase.node_id, tophase.parent, edge.length * (least(fromnetwork.sum_length,  tonetwork.sum_length)/greatest(fromnetwork.sum_length,  tonetwork.sum_length)) as gateway_size from edge
         join node as "from" on edge.from = "from".id
         join node as "to" on edge.to = "to".id
         join graph_phase as fromphase on "from".id = fromphase.node_id
@@ -179,7 +179,7 @@ with con.cursor() as cursor:
     # mycolors = []
     # graph_edges = G.edges
     # for i in graph_edges:
-    #     G[i[0]][i[1]][i[2]]['color'] = get_first(cursor, exe_fetchone(f"select min(fromphase.phase) from edge join graph_phase as fromphase on edge.from = fromphase.node_id join graph_phase as tophase on edge.to = tophase.node_id and tophase.phase =fromphase.phase where fromphase.parent = tophase.parent and edge.from = {i[0]} and edge.to = {i[1]} group by edge.id;"))
+    #     G[i[0]][i[1]][i[2]]['color'] = get_first(cursor, exe_fetchone(cursor, f"select min(fromphase.phase) from edge join graph_phase as fromphase on edge.from = fromphase.node_id join graph_phase as tophase on edge.to = tophase.node_id and tophase.phase =fromphase.phase where fromphase.parent = tophase.parent and edge.from = {i[0]} and edge.to = {i[1]} group by edge.id;"))
         # mycolors.append(G[i[0]][i[1]][i[2]]['color'])
 
     # ec = ox.plot.get_edge_colors_by_attr(G, attr='color')
