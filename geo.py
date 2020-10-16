@@ -117,7 +117,7 @@ with con.cursor() as cursor:
 
         # gets new candidates
         candidates = exe_fetch(cursor, f"""
-        select edge.id, fromphase.node_id, fromphase.parent, tophase.node_id, tophase.parent, edge.length * (least(fromnetwork.sum_length,  tonetwork.sum_length)/greatest(fromnetwork.sum_length,  tonetwork.sum_length)) as gateway_size from edge
+        select edge.id, fromphase.node_id, fromphase.parent, tophase.node_id, tophase.parent, edge.length * least(fromnetwork.sum_length,  tonetwork.sum_length) as gateway_size from edge
         join node as "from" on edge.from = "from".id
         join node as "to" on edge.to = "to".id
         join graph_phase as fromphase on "from".id = fromphase.node_id
