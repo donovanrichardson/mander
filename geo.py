@@ -41,7 +41,8 @@ G = ox.get_undirected(ox.graph_from_place(name, network_type='drive', retain_all
 #don't need to plot this below bc it holds the thing up
 # fig, ax = ox.plot_graph(G, figsize=(10,10), node_color='orange', node_size=30,
 # node_zorder=2, node_edgecolor='k')
-print("processing has begun")
+print("processing has begun",f"nodes: {G.number_of_nodes}", f"edges: {G.number_of_edges}")
+
 beginning = datetime.now()
 # imports the graph into the databate and processes the graph
 with con.cursor() as cursor:
@@ -186,6 +187,7 @@ with con.cursor() as cursor:
     
     for idx, val in enumerate(rounds):
         print(idx+1, val)
+    print(f"nodes: {G.number_of_nodes}", f"edges: {G.number_of_edges}")
     print("processing complete: HMS=", datetime.now() - beginning)
 
     # mycolors = []
