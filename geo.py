@@ -8,6 +8,7 @@ import psycopg2
 import psycopg2.extras
 import csv
 from db import con
+from datetime import datetime
 
 # for some reason this prevents the db for getting upset with "duplicate values" in candidate_edges. probable a concurrency issue
 con.autocommit = True
@@ -31,16 +32,17 @@ def get_first(tuple):
 # G = ox.get_undirected(ox.graph_from_address(address, network_type='drive', dist=3000, retain_all=True))
 
 # This is the first statement. It gets a graph from OpenStreetMap based on the geocodable area retrieved from the user.
-name = input()
+name = input("Choose city or area:")
 G = ox.get_undirected(ox.graph_from_place(name, network_type='drive', retain_all=True))
 # G = ox.get_undirected(ox.graph_from_place(name, custom_filter='["highway"~"motorway|trunk"]', retain_all=True))
 # G = ox.get_undirected(ox.graph_from_place(name, custom_filter='["highway"~"motorway"]', retain_all=True))
 # G = ox.get_undirected(ox.graph_from_place(name, custom_filter='["highway"~"primary|trunk"]', retain_all=True))
 
 #don't need to plot this below bc it holds the thing up
-fig, ax = ox.plot_graph(G, figsize=(10,10), node_color='orange', node_size=30,
-node_zorder=2, node_edgecolor='k')
-
+# fig, ax = ox.plot_graph(G, figsize=(10,10), node_color='orange', node_size=30,
+# node_zorder=2, node_edgecolor='k')
+print("processing has begun")
+beginning = datetime.now()
 # imports the graph into the databate and processes the graph
 with con.cursor() as cursor:
 
@@ -76,12 +78,17 @@ with con.cursor() as cursor:
 
     #sets the current phase to 0. This is the phase of all records in "graph_phase" at this point 
     ph = 0
+    rounds = []
+
 
     #this operation will add a set of records into graph_phase identical to f"select * from graph_phase where phase = {ph}", except that the phase will be incremented by one. 
     #then, subgraphs (sets of nodes in graph_phase same parents) will be joined (get the same parent) through nodes which have the smallest product of (length of node * length of join-candidate subgraph with smallest length). These two candidate subgraphs will then be joined under the same parent (using the smallest parent_id) and then all nodes of this new subgraph will become "traversed" = true.
     #the while loop will end when all nodes have the same parent. this is unlikely because in large road network graphs there may be several disconnected subgraphs. It's more likely that the break statement if(len(working) < 1): will cause the loop to end, because there are no nodes that can be further joined.
     # #I just realized that the traversed = false below makes the algo exit too early. 
     while(len(exe_fetch(cursor, f"select distinct parent from graph_phase where phase = {ph}")) > 1):
+
+        phasebegin = datetime.now()
+
         last = exe_fetch(cursor, f"select * from graph_phase where phase = {ph}")
         working = exe_fetch(cursor, f"""
             select edge.id, fromphase.parent, tophase.parent from edge 
@@ -175,7 +182,12 @@ with con.cursor() as cursor:
             print(exe_fetch(cursor, f"""
             update graph_phase set parent = {min(zero[1],zero[2])}, traversed = true where parent in ({zero[1]},{zero[2]}) and phase = {ph} returning *;
             """))
+        rounds.append(datetime.now()-phasebegin)
     
+    for idx, val in enumerate(rounds):
+        print(idx+1, val)
+    print("processing complete: HMS=", datetime.now() - beginning)
+
     # mycolors = []
     # graph_edges = G.edges
     # for i in graph_edges:
