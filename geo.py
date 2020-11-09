@@ -36,7 +36,7 @@ def get_first(tuple):
 # This is the first statement. It gets a graph from OpenStreetMap based on the geocodable area retrieved from the user.
 name = input("Choose city or area:")
 download = datetime.now()
-# G = ox.get_undirected(ox.graph_from_place(name, network_type='drive', retain_all=True))
+G = ox.get_undirected(ox.graph_from_place(name, network_type='drive', retain_all=True))
 # G = ox.get_undirected(ox.graph_from_place(name, custom_filter='["highway"~"motorway|trunk"]', retain_all=True))
 # G = ox.get_undirected(ox.graph_from_place(name, custom_filter='["highway"~"motorway"]', retain_all=True))
 # G = ox.get_undirected(ox.graph_from_place(name, custom_filter='["highway"~"primary|trunk"]', retain_all=True))
@@ -44,17 +44,17 @@ download = datetime.now()
 # G = ox.get_undirected(ox.graph_from_place(name, custom_filter='["highway"~"motorway|primary|trunk|secondary"]', retain_all=True))
 # G = ox.get_undirected(ox.graph_from_place(["Brooklyn, NY","Queens, NY", "Nassau County, NY", "Suffolk County, NY"], custom_filter='["highway"~"motorway|primary|trunk|secondary|tertiary"]', retain_all=True))
 
-# https://medium.com/@pramukta/recipe-importing-geojson-into-shapely-da1edf79f41d
-with open("shape/oysterbay-glencove.geojsonl.json") as f:
-  feature = json.load(f)
+# # https://medium.com/@pramukta/recipe-importing-geojson-into-shapely-da1edf79f41d
+# with open("shape/oysterbay-glencove.geojsonl.json") as f:
+#   feature = json.load(f)
 
-# print(feature['geometry'])
-# print([shape(feature["geometry"]).buffer(0) for feature in features])
+# # print(feature['geometry'])
+# # print([shape(feature["geometry"]).buffer(0) for feature in features])
 
-# # NOTE: buffer(0) is a trick for fixing scenarios where polygons have overlapping coordinates 
-north_shore = Polygon(shape(feature['geometry']))
+# # # NOTE: buffer(0) is a trick for fixing scenarios where polygons have overlapping coordinates 
+# north_shore = Polygon(shape(feature['geometry']))
 
-G = ox.get_undirected(ox.graph_from_polygon(north_shore,network_type='drive',retain_all=True))
+# G = ox.get_undirected(ox.graph_from_polygon(north_shore,network_type='drive',retain_all=True))
 
 #don't need to plot this below bc it holds the thing up
 # fig, ax = ox.plot_graph(G, figsize=(10,10), node_color='orange', node_size=30,
@@ -65,34 +65,39 @@ print(f"download time: {beginning - download}")
 # imports the graph into the databate and processes the graph
 with con.cursor() as cursor:
 
+    cursor.execute(f"INSERT INTO location VALUES ('{name}')")
+
     #For each node, inserts into the "node" table.
     #The "node" table has "id", "lat", and "lon" columns
     psycopg2.extras.execute_values(cursor, """
-        INSERT INTO node(id, lat, lon) VALUES %s;
+        INSERT INTO node(id, lat, lon, loc) VALUES %s;
     """, ((
         n,
         data['y'],
-        data['x']
+        data['x'],
+        name
     ) for n, data, in G.nodes(data=True)))
 
     #For each node, inserts the node with itself as its parent and 0 as its phase into the "graph_phase" table
     #The "graph_phase" table has the columns "phase", "node_id", "parent", and "traversed"
     #Through the process of this script, sets of nodes (i.e. subgraphs) with different parents in one phace will receive different parents in the next phase until it is not possible to continue this operation.
     psycopg2.extras.execute_values(cursor, """
-        INSERT INTO graph_phase(phase, node_id, parent) VALUES %s;
+        INSERT INTO graph_phase(phase, node_id, parent, loc) VALUES %s;
     """, ((
         0,
         n,
-        n
+        n,
+        name
     ) for n, data, in G.nodes(data=True)))
 
     #For each edge, inserts "from" node, "to" node, and edge "length"
     psycopg2.extras.execute_values(cursor, """
-        INSERT INTO edge("from", "to", length) VALUES %s;
+        INSERT INTO edge("from", "to", length, loc) VALUES %s;
     """, ((
         u,
         v,
-        data['length']
+        data['length'],
+        name
     ) for u, v ,keys, data in G.edges(data=True, keys=True)))
 
     #sets the current phase to 0. This is the phase of all records in "graph_phase" at this point 
@@ -105,84 +110,96 @@ with con.cursor() as cursor:
     #the while loop will end when all nodes have the same parent. this is unlikely because in large road network graphs there may be several disconnected subgraphs. It's more likely that the break statement if(len(working) < 1): will cause the loop to end, because there are no nodes that can be further joined.
     # #I just realized that the traversed = false below makes the algo exit too early. 
     while(len(exe_fetch(cursor, f"select distinct parent from graph_phase where phase = {ph}")) > 1):
+        print("begin")
 
         phasebegin = datetime.now()
 
         last = exe_fetch(cursor, f"select * from graph_phase where phase = {ph}")
         working = exe_fetch(cursor, f"""
             select edge.id, fromphase.parent, tophase.parent from edge 
-            join node as "from" on edge.from = "from".id
-            join node as "to" on edge.to = "to".id
-            join graph_phase as fromphase on "from".id = fromphase.node_id
-            join graph_phase as tophase on "to".id = tophase.node_id and fromphase.phase = tophase.phase
-            where fromphase.parent <> tophase.parent 
+            join node as "from" on edge.from = "from".id and edge.loc = "from".loc
+            join node as "to" on edge.to = "to".id and edge.loc = "to".loc
+            join graph_phase as fromphase on "from".id = fromphase.node_id and "from".loc = fromphase.loc
+            join graph_phase as tophase on "to".id = tophase.node_id and "to".loc = tophase.loc and fromphase.phase = tophase.phase
+            where fromphase.parent <> tophase.parent
+            and edge.loc = '{name}'
             and fromphase.phase={ph} 
             limit 1;
             """) #left out the traversed part
         if(len(working) < 1):
             print("nowork")
             break
+
+        # increments phase
+        ph = ph+1
+        # inserts new graph phase
+        cursor.execute(f"""
+            INSERT INTO graph_phase("phase", "node_id", "parent", "loc") 
+            (select {ph}, node_id, parent, loc from graph_phase where phase = {ph - 1});
+        """)
+        # print(f"Phase {ph}")
+
         #network size stores the length of subgraphs used in this algorithm. 
         cursor.execute(
             f"""
-            insert into network_size (select graph_phase.parent, sum(edge.length) as sum_length from graph_phase join edge on graph_phase.node_id = edge.from or graph_phase.node_id = edge.to where graph_phase.phase={ph} group by graph_phase.parent) on conflict (parent) do update set sum_length=excluded.sum_length;
+            insert into network_size 
+            (select graph_phase.parent, graph_phase.loc, sum(edge.length) as sum_length, graph_phase.phase
+            from graph_phase 
+            join edge on (graph_phase.node_id = edge.from and graph_phase.loc = edge.loc) 
+            or (graph_phase.node_id = edge.to and graph_phase.loc = edge.loc) 
+            where graph_phase.phase={ph}
+            and graph_phase.loc = '{name}' 
+            group by graph_phase.parent, graph_phase.loc, graph_phase.phase) 
+            
             """
         )
         
         #don't think this is necessary
-        print(ph, len(exe_fetch(cursor, f"""
-            select edge.id, fromphase.parent, tophase.parent from edge 
-            join node as "from" on edge.from = "from".id
-            join node as "to" on edge.to = "to".id
-            join graph_phase as fromphase on "from".id = fromphase.node_id
-            join graph_phase as tophase on "to".id = tophase.node_id and fromphase.phase = tophase.phase
-            where fromphase.parent <> tophase.parent 
-            and fromphase.phase={ph} 
-            and fromphase.traversed = false;
-        """)))
+        # print(ph, len(exe_fetch(cursor, f"""
+        #     select edge.id, fromphase.parent, tophase.parent from edge 
+        #     join node as "from" on edge.from = "from".id
+        #     join node as "to" on edge.to = "to".id    
+        #     join graph_phase as fromphase on "from".id = fromphase.node_id
+        #     join graph_phase as tophase on "to".id = tophase.node_id and fromphase.phase = tophase.phase
+        #     where fromphase.parent <> tophase.parent 
+        #     and fromphase.phase={ph} 
+        #     and fromphase.traversed = false;
+        # """)))
 
-        # gets new candidates
-        candidates = exe_fetch(cursor, f"""
-        select edge.id, fromphase.node_id, fromphase.parent, tophase.node_id, tophase.parent, edge.length * least(fromnetwork.sum_length,  tonetwork.sum_length) as gateway_size from edge
-        join node as "from" on edge.from = "from".id
-        join node as "to" on edge.to = "to".id
-        join graph_phase as fromphase on "from".id = fromphase.node_id
-        join graph_phase as tophase on "to".id = tophase.node_id and fromphase.phase = tophase.phase 
-        join network_size as fromnetwork on fromnetwork.parent = fromphase.parent
-        join network_size as tonetwork on tonetwork.parent = tophase.parent
-        where fromphase.parent <> tophase.parent 
-        and fromphase.phase={ph};
+        # gets new candidates 
+        # {name} is an easy way to return the loc in the select statement
+        cursor.execute(f"""
+        insert into candidate_edge(gateway_size, fromparent, toparent, loc, phase) (select (power(10,avg(log(edge.length))) * least(fromnetwork.sum_length,  tonetwork.sum_length))/ count(*) as gateway_size, fromphase.parent, tophase.parent, '{name}', {ph} from edge
+        join graph_phase as fromphase on edge.from = fromphase.node_id and edge.loc = fromphase.loc
+        join graph_phase as tophase on edge.to = tophase.node_id and edge.loc = tophase.loc and fromphase.phase = tophase.phase
+        join network_size as fromnetwork on fromnetwork.parent = fromphase.parent and fromnetwork.loc = fromphase.loc and fromnetwork.phase = fromphase.phase
+        join network_size as tonetwork on tonetwork.parent = tophase.parent and tonetwork.loc = tophase.loc and tonetwork.phase = tophase.phase
+        where fromphase.parent <> tophase.parent
+        and fromphase.phase={ph}
+        and edge.loc = '{name}'
+        group by fromphase.parent, tophase.parent, fromnetwork.sum_length, tonetwork.sum_length
+        order by gateway_size);
         """)
 
         #deletes old candidates
-        cursor.execute("delete from candidate_edge;")
+        # cursor.execute("delete from candidate_edge;")
 
-        #inserts new candidates
-        psycopg2.extras.execute_values(cursor, """
-            INSERT INTO candidate_edge VALUES %s on conflict(edge_id) do update set fromparent=excluded.fromparent, toparent=excluded.toparent, gateway_size=excluded.gateway_size;
-        """, candidates)
-
+        #inserts new candidates (no longer necessary because execute above)
+        # psycopg2.extras.execute_values(cursor, """
+        #     INSERT INTO candidate_edge VALUES %s;
+        # """, candidates)
+        #there should be no need for on conflict if i am inserting after deleting all records
         # had the same insert network statement twice lol
 
-        # increments phase
-        ph = ph+1
-        #inserts new graph phase
-        psycopg2.extras.execute_values(cursor, """
-            INSERT INTO graph_phase("phase", "node_id", "parent") VALUES %s;
-        """, ((
-            ph,
-            phase[1],
-            phase[2]
-        ) for phase in last))
-        print(f"Phase {ph}")
-
         while(True):
+            print("iteration")
             #the algorithm described above is executed here
             cursor.execute(f"""
-            select candidate_edge.edge_id, candidate_edge.fromparent, candidate_edge.toparent, candidate_edge.gateway_size from candidate_edge
-            join graph_phase as fromphase on candidate_edge.fromphase_id = fromphase.node_id
-            join graph_phase as tophase on candidate_edge.tophase_id = tophase.node_id and tophase.phase = fromphase.phase
-            where fromphase.phase = {ph}
+            select candidate_edge.fromparent, candidate_edge.toparent, candidate_edge.gateway_size from candidate_edge
+            join graph_phase as fromphase on candidate_edge.fromparent = fromphase.node_id and candidate_edge.phase = fromphase.phase
+            join graph_phase as tophase on candidate_edge.toparent = tophase.node_id and tophase.phase = fromphase.phase
+            where candidate_edge.phase = {ph}
+            and candidate_edge.loc = '{name}'
             and not fromphase.traversed
             and not tophase.traversed
             order by candidate_edge.gateway_size
@@ -192,6 +209,7 @@ with con.cursor() as cursor:
 
             #zero represents the node that will join two subgraphs together.
             zero = cursor.fetchone()
+            print("zero", zero)
 
             #if there is no node that can join subgraphs together, this will not execute.
             if(not zero):
@@ -199,8 +217,14 @@ with con.cursor() as cursor:
             
             # prints nodes that are updated
             print(exe_fetch(cursor, f"""
-            update graph_phase set parent = {min(zero[1],zero[2])}, traversed = true where parent in ({zero[1]},{zero[2]}) and phase = {ph} returning *;
+            update graph_phase set parent = {min(zero[0],zero[1])}, traversed = true where parent in ({zero[0]},{zero[1]}) and phase = {ph} and loc = '{name}' returning *;
             """))
+        
+
+        # # increments phase
+        # ph = ph+1
+        print(ph)
+
         rounds.append(datetime.now()-phasebegin)
     
     for idx, val in enumerate(rounds):
@@ -219,7 +243,7 @@ with con.cursor() as cursor:
 
 
     graph_nodes = G.nodes
-    max_phase = exe_fetchone(cursor, "select max(phase) from graph_phase")[0]
+    max_phase = exe_fetchone(cursor, f"select max(phase) from graph_phase where loc = '{name}'")[0]
     # adds parent properties from the "graph_nodes" table in the DB for each node in the greaph
     for i in graph_nodes:
         # print(i)

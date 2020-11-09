@@ -2,7 +2,7 @@ import psycopg2
 
 con = psycopg2.connect(
     host = 'localhost',
-    database='mander',
+    database='mander2',
     user='',
     password=''
 )
