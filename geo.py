@@ -36,7 +36,7 @@ def get_first(tuple):
 # This is the first statement. It gets a graph from OpenStreetMap based on the geocodable area retrieved from the user.
 name = input("Choose city or area:")
 download = datetime.now()
-G = ox.get_undirected(ox.graph_from_place(name, network_type='drive', retain_all=True))
+# G = ox.get_undirected(ox.graph_from_place(name, network_type='drive', retain_all=True))
 # G = ox.get_undirected(ox.graph_from_place(name, custom_filter='["highway"~"motorway|trunk"]', retain_all=True))
 # G = ox.get_undirected(ox.graph_from_place(name, custom_filter='["highway"~"motorway"]', retain_all=True))
 # G = ox.get_undirected(ox.graph_from_place(name, custom_filter='["highway"~"primary|trunk"]', retain_all=True))
@@ -44,17 +44,18 @@ G = ox.get_undirected(ox.graph_from_place(name, network_type='drive', retain_all
 # G = ox.get_undirected(ox.graph_from_place(name, custom_filter='["highway"~"motorway|primary|trunk|secondary"]', retain_all=True))
 # G = ox.get_undirected(ox.graph_from_place(["Brooklyn, NY","Queens, NY", "Nassau County, NY", "Suffolk County, NY"], custom_filter='["highway"~"motorway|primary|trunk|secondary|tertiary"]', retain_all=True))
 
-# # https://medium.com/@pramukta/recipe-importing-geojson-into-shapely-da1edf79f41d
+# https://medium.com/@pramukta/recipe-importing-geojson-into-shapely-da1edf79f41d
 # with open("shape/oysterbay-glencove.geojsonl.json") as f:
-#   feature = json.load(f)
+with open("shape/northshore.geojsonl.json") as f:
+  feature = json.load(f)
 
-# # print(feature['geometry'])
-# # print([shape(feature["geometry"]).buffer(0) for feature in features])
+# print(feature['geometry'])
+# print([shape(feature["geometry"]).buffer(0) for feature in features])
 
-# # # NOTE: buffer(0) is a trick for fixing scenarios where polygons have overlapping coordinates 
-# north_shore = Polygon(shape(feature['geometry']))
+# # NOTE: buffer(0) is a trick for fixing scenarios where polygons have overlapping coordinates 
+north_shore = Polygon(shape(feature['geometry']))
 
-# G = ox.get_undirected(ox.graph_from_polygon(north_shore,network_type='drive',retain_all=True))
+G = ox.get_undirected(ox.graph_from_polygon(north_shore,network_type='drive',retain_all=True))
 
 #don't need to plot this below bc it holds the thing up
 # fig, ax = ox.plot_graph(G, figsize=(10,10), node_color='orange', node_size=30,
@@ -135,7 +136,7 @@ with con.cursor() as cursor:
         # inserts new graph phase
         cursor.execute(f"""
             INSERT INTO graph_phase("phase", "node_id", "parent", "loc") 
-            (select {ph}, node_id, parent, loc from graph_phase where phase = {ph - 1});
+            (select {ph}, node_id, parent, loc from graph_phase where phase = {ph - 1} and loc = '{name}');
         """)
         # print(f"Phase {ph}")
 
@@ -248,7 +249,7 @@ with con.cursor() as cursor:
     for i in graph_nodes:
         # print(i)
         for j in range(0, max_phase+1):
-            parent = exe_fetchone(cursor, f"select parent from graph_phase where node_id = {i} and phase = {j}")[0]
+            parent = exe_fetchone(cursor, f"select parent from graph_phase where node_id = {i} and phase = {j} and loc='{name}'")[0]
             G.nodes[i][j] = parent
     
     try:
