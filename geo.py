@@ -40,13 +40,13 @@ con.create_function("log", 1, lambda x: log(x,10))
 # This is the first statement. It gets a graph from OpenStreetMap based on the geocodable area retrieved from the user.
 name = input("Choose city or area:")
 download = datetime.now()
-G = ox.get_undirected(ox.graph_from_place(name, network_type='drive', retain_all=True))
+# G = ox.get_undirected(ox.graph_from_place(name, network_type='drive', retain_all=True))
 # G = ox.get_undirected(ox.graph_from_place(name, custom_filter='["highway"~"motorway|trunk"]', retain_all=True))
 # G = ox.get_undirected(ox.graph_from_place(name, custom_filter='["highway"~"motorway"]', retain_all=True))
 # G = ox.get_undirected(ox.graph_from_place(name, custom_filter='["highway"~"primary|trunk"]', retain_all=True))
 # G = ox.get_undirected(ox.graph_from_place(name, custom_filter='["highway"~"motorway|primary|trunk"]', retain_all=True))
 # G = ox.get_undirected(ox.graph_from_place(name, custom_filter='["highway"~"motorway|primary|trunk|secondary"]', retain_all=True))
-# G = ox.get_undirected(ox.graph_from_place(["Brooklyn, NY","Queens, NY", "Nassau County, NY", "Suffolk County, NY"], custom_filter='["highway"~"motorway|primary|trunk|secondary|tertiary"]', retain_all=True))
+G = ox.get_undirected(ox.graph_from_place(["Brooklyn, NY","Queens, NY", "Nassau County, NY", "Suffolk County, NY"], custom_filter='["highway"~"motorway|primary|trunk|secondary|tertiary"]', retain_all=True))
 
 # # https://medium.com/@pramukta/recipe-importing-geojson-into-shapely-da1edf79f41d
 # with open("shape/oysterbay-glencove.geojsonl.json") as f:

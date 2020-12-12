@@ -1,6 +1,6 @@
 import sqlite3
 
-con = sqlite3.connect('sqlite.db', isolation_level=None)
+con = sqlite3.connect(':memory:', isolation_level=None)
 
 # cur = con.cursor()
 
