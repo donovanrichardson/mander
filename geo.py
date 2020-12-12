@@ -246,7 +246,7 @@ with con:
         # inserts new graph phase
         cursor.execute(f"""
             INSERT INTO graph_phase("phase", "node_id", "parent")
-            (select {ph}, node_id, parent, from graph_phase where phase = {ph - 1});
+            select {ph}, node_id, parent from graph_phase where phase = {ph - 1};
         """)
         print(f"Phase {ph}")
 
