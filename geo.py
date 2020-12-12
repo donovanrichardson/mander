@@ -105,7 +105,7 @@ with con.cursor() as cursor:
     #the while loop will end when all nodes have the same parent. this is unlikely because in large road network graphs there may be several disconnected subgraphs. It's more likely that the break statement if(len(working) < 1): will cause the loop to end, because there are no nodes that can be further joined.
     # #I just realized that the traversed = false below makes the algo exit too early. 
     while(len(exe_fetch(cursor, f"select distinct parent from graph_phase where phase = {ph}")) > 1):
-
+        print("begin")
         phasebegin = datetime.now()
 
         last = exe_fetch(cursor, f"select * from graph_phase where phase = {ph}")
@@ -122,66 +122,71 @@ with con.cursor() as cursor:
         if(len(working) < 1):
             print("nowork")
             break
-        #network size stores the length of subgraphs used in this algorithm. 
-        cursor.execute(
-            f"""
-            insert into network_size (select graph_phase.parent, sum(edge.length) as sum_length from graph_phase join edge on graph_phase.node_id = edge.from or graph_phase.node_id = edge.to where graph_phase.phase={ph} group by graph_phase.parent) on conflict (parent) do update set sum_length=excluded.sum_length;
-            """
-        )
-        
-        #don't think this is necessary
-        print(ph, len(exe_fetch(cursor, f"""
-            select edge.id, fromphase.parent, tophase.parent from edge 
-            join node as "from" on edge.from = "from".id
-            join node as "to" on edge.to = "to".id
-            join graph_phase as fromphase on "from".id = fromphase.node_id
-            join graph_phase as tophase on "to".id = tophase.node_id and fromphase.phase = tophase.phase
-            where fromphase.parent <> tophase.parent 
-            and fromphase.phase={ph} 
-            and fromphase.traversed = false;
-        """)))
-
-        # gets new candidates
-        candidates = exe_fetch(cursor, f"""
-        select edge.id, fromphase.node_id, fromphase.parent, tophase.node_id, tophase.parent, edge.length * least(fromnetwork.sum_length,  tonetwork.sum_length) as gateway_size from edge
-        join node as "from" on edge.from = "from".id
-        join node as "to" on edge.to = "to".id
-        join graph_phase as fromphase on "from".id = fromphase.node_id
-        join graph_phase as tophase on "to".id = tophase.node_id and fromphase.phase = tophase.phase 
-        join network_size as fromnetwork on fromnetwork.parent = fromphase.parent
-        join network_size as tonetwork on tonetwork.parent = tophase.parent
-        where fromphase.parent <> tophase.parent 
-        and fromphase.phase={ph};
-        """)
-
-        #deletes old candidates
-        cursor.execute("delete from candidate_edge;")
-
-        #inserts new candidates
-        psycopg2.extras.execute_values(cursor, """
-            INSERT INTO candidate_edge VALUES %s on conflict(edge_id) do update set fromparent=excluded.fromparent, toparent=excluded.toparent, gateway_size=excluded.gateway_size;
-        """, candidates)
-
-        # had the same insert network statement twice lol
 
         # increments phase
         ph = ph+1
-        #inserts new graph phase
-        psycopg2.extras.execute_values(cursor, """
-            INSERT INTO graph_phase("phase", "node_id", "parent") VALUES %s;
-        """, ((
-            ph,
-            phase[1],
-            phase[2]
-        ) for phase in last))
+        # inserts new graph phase
+        cursor.execute(f"""
+            INSERT INTO graph_phase("phase", "node_id", "parent") 
+            (select {ph}, node_id, parent, from graph_phase where phase = {ph - 1});
+        """)
         print(f"Phase {ph}")
+
+        #network size stores the length of subgraphs used in this algorithm. 
+        cursor.execute(
+            f"""
+            insert into network_size 
+            (select graph_phase.parent, sum(edge.length) as sum_length, graph_phase.phase 
+            from graph_phase 
+            join edge on graph_phase.node_id = edge.from 
+            or graph_phase.node_id = edge.to 
+            where graph_phase.phase={ph} 
+            group by graph_phase.parent, graph_phase.loc, graph_phase.phase;
+            """
+        )
+        
+        # #don't think this is necessary
+        # print(ph, len(exe_fetch(cursor, f"""
+        #     select edge.id, fromphase.parent, tophase.parent from edge 
+        #     join node as "from" on edge.from = "from".id
+        #     join node as "to" on edge.to = "to".id
+        #     join graph_phase as fromphase on "from".id = fromphase.node_id
+        #     join graph_phase as tophase on "to".id = tophase.node_id and fromphase.phase = tophase.phase
+        #     where fromphase.parent <> tophase.parent 
+        #     and fromphase.phase={ph} 
+        #     and fromphase.traversed = false;
+        # """)))
+
+        # gets new candidates
+        cursor.execute(f"""
+        insert into candidate_edge(gateway_size, fromparent, toparent, phase) (select (power(10,avg(log(edge.length))) * least(fromnetwork.sum_length,  tonetwork.sum_length))/ count(*) as gateway_size, fromphase.parent, tophase.parent, {ph} from edge
+        join graph_phase as fromphase on edge.from = fromphase.node_id
+        join graph_phase as tophase on edge.to = tophase.node_id and fromphase.phase = tophase.phase
+        join network_size as fromnetwork on fromnetwork.parent = fromphase.parent and fromnetwork.phase = fromphase.phase
+        join network_size as tonetwork on tonetwork.parent = tophase.parent and tonetwork.phase = tophase.phase
+        where fromphase.parent <> tophase.parent
+        and fromphase.phase={ph}
+        group by fromphase.parent, tophase.parent, fromnetwork.sum_length, tonetwork.sum_length
+        order by gateway_size);
+        """)
+
+        #deletes old candidates
+        # cursor.execute("delete from candidate_edge;")
+
+        #inserts new candidates(no longer necessary because execute above)
+        # psycopg2.extras.execute_values(cursor, """
+        #     INSERT INTO candidate_edge VALUES %s on conflict(edge_id) do update set fromparent=excluded.fromparent, toparent=excluded.toparent, gateway_size=excluded.gateway_size;
+        # """, candidates)
+
+        # had the same insert network statement twice lol
+
 
         while(True):
             #the algorithm described above is executed here
             cursor.execute(f"""
-            select candidate_edge.edge_id, candidate_edge.fromparent, candidate_edge.toparent, candidate_edge.gateway_size from candidate_edge
-            join graph_phase as fromphase on candidate_edge.fromphase_id = fromphase.node_id
-            join graph_phase as tophase on candidate_edge.tophase_id = tophase.node_id and tophase.phase = fromphase.phase
+            select candidate_edge.fromparent, candidate_edge.toparent, candidate_edge.gateway_size from candidate_edge
+            join graph_phase as fromphase on candidate_edge.fromparent = fromphase.node_id and candidate_edge.phase = fromphase.phase
+            join graph_phase as tophase on candidate_edge.toparent = tophase.node_id and tophase.phase = fromphase.phase
             where fromphase.phase = {ph}
             and not fromphase.traversed
             and not tophase.traversed
@@ -192,6 +197,7 @@ with con.cursor() as cursor:
 
             #zero represents the node that will join two subgraphs together.
             zero = cursor.fetchone()
+            print("zero", zero)
 
             #if there is no node that can join subgraphs together, this will not execute.
             if(not zero):
@@ -199,8 +205,9 @@ with con.cursor() as cursor:
             
             # prints nodes that are updated
             print(exe_fetch(cursor, f"""
-            update graph_phase set parent = {min(zero[1],zero[2])}, traversed = true where parent in ({zero[1]},{zero[2]}) and phase = {ph} returning *;
+            update graph_phase set parent = {min(zero[1],zero[2])}, traversed = true where parent in ({zero[1]},{zero[2]}) and phase = {ph};
             """))
+            print("phase", ph)
         rounds.append(datetime.now()-phasebegin)
     
     for idx, val in enumerate(rounds):
