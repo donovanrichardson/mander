@@ -11,6 +11,7 @@ from db import con
 from datetime import datetime
 import json
 from shapely.geometry import shape, Polygon
+from math import log
 
 # for some reason this prevents the db for getting upset with "duplicate values" in candidate_edges. probable a concurrency issue
 
@@ -28,6 +29,9 @@ def exe_fetchone(cursor, query):
 # a safe get[0] for a tuple (or a list)
 def get_first(tuple):
     return 0 if tuple is None else tuple[0]
+
+con.create_function("power", 2, lambda x, y: x**y)
+con.create_function("log", 1, lambda x: log(x,10))
 
 # commented this out because I don't want to get a specific position
 # address = '731 Park Avenue, Huntington NY, 11743'
@@ -254,12 +258,12 @@ with con:
         cursor.execute(
             f"""
             insert into network_size 
-            (select graph_phase.parent, sum(edge.length) as sum_length, graph_phase.phase 
+            select graph_phase.parent, sum(edge.length) as sum_length, graph_phase.phase 
             from graph_phase 
             join edge on graph_phase.node_id = edge."from" 
             or graph_phase.node_id = edge."to" 
             where graph_phase.phase={ph} 
-            group by graph_phase.parent, graph_phase.loc, graph_phase.phase;
+            group by graph_phase.parent, graph_phase.phase;
             """
         )
         
@@ -277,7 +281,8 @@ with con:
 
         # gets new candidates
         cursor.execute(f"""
-        insert into candidate_edge(gateway_size, fromparent, toparent, phase) (select (power(10,avg(log(edge.length))) * least(fromnetwork.sum_length,  tonetwork.sum_length))/ count(*) as gateway_size, fromphase.parent, tophase.parent, {ph} from edge
+        insert into candidate_edge(gateway_size, fromparent, toparent, phase) 
+        select (power(10,avg(log(edge.length))) * min(fromnetwork.sum_length,  tonetwork.sum_length))/ count(*) as gateway_size, fromphase.parent, tophase.parent, {ph} from edge
         join graph_phase as fromphase on edge."from" = fromphase.node_id
         join graph_phase as tophase on edge."to" = tophase.node_id and fromphase.phase = tophase.phase
         join network_size as fromnetwork on fromnetwork.parent = fromphase.parent and fromnetwork.phase = fromphase.phase
@@ -285,7 +290,7 @@ with con:
         where fromphase.parent <> tophase.parent
         and fromphase.phase={ph}
         group by fromphase.parent, tophase.parent, fromnetwork.sum_length, tonetwork.sum_length
-        order by gateway_size);
+        order by gateway_size;
         """)
         #probably don't need orderby, but it might help the indexing ^^
 
