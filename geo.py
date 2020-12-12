@@ -90,8 +90,6 @@ with con:
             toparent bigint,
             gateway_size double precision,
             phase integer,
-            constraint candidate_edge_unique
-                unique(fromparent,toparent,phase),
             constraint candidate_edge_fromparent_fkey
                 foreign key (fromparent) references node(id)
                     on update cascade on delete cascade,
@@ -121,8 +119,6 @@ with con:
             "from" bigint,
             "to" bigint,
             length double precision,
-            constraint edge_unique
-                unique("from","to"),
             constraint edge_from_fkey
                 foreign key ("from") references node(id)
                     on update cascade on delete cascade,
@@ -232,9 +228,9 @@ with con:
 
         last = exe_fetch(cursor, f"select * from graph_phase where phase = {ph}")
         working = exe_fetch(cursor, f"""
-            select edge.id, fromphase.parent, tophase.parent from edge 
-            join node as "from" on edge.from = "from".id
-            join node as "to" on edge.to = "to".id
+            select fromphase.parent, tophase.parent from edge 
+            join node as "from" on edge."from" = "from".id
+            join node as "to" on edge."to" = "to".id
             join graph_phase as fromphase on "from".id = fromphase.node_id
             join graph_phase as tophase on "to".id = tophase.node_id and fromphase.phase = tophase.phase
             where fromphase.parent <> tophase.parent 
@@ -249,7 +245,7 @@ with con:
         ph = ph+1
         # inserts new graph phase
         cursor.execute(f"""
-            INSERT INTO graph_phase("phase", "node_id", "parent") 
+            INSERT INTO graph_phase("phase", "node_id", "parent")
             (select {ph}, node_id, parent, from graph_phase where phase = {ph - 1});
         """)
         print(f"Phase {ph}")
@@ -260,8 +256,8 @@ with con:
             insert into network_size 
             (select graph_phase.parent, sum(edge.length) as sum_length, graph_phase.phase 
             from graph_phase 
-            join edge on graph_phase.node_id = edge.from 
-            or graph_phase.node_id = edge.to 
+            join edge on graph_phase.node_id = edge."from" 
+            or graph_phase.node_id = edge."to" 
             where graph_phase.phase={ph} 
             group by graph_phase.parent, graph_phase.loc, graph_phase.phase;
             """
@@ -282,8 +278,8 @@ with con:
         # gets new candidates
         cursor.execute(f"""
         insert into candidate_edge(gateway_size, fromparent, toparent, phase) (select (power(10,avg(log(edge.length))) * least(fromnetwork.sum_length,  tonetwork.sum_length))/ count(*) as gateway_size, fromphase.parent, tophase.parent, {ph} from edge
-        join graph_phase as fromphase on edge.from = fromphase.node_id
-        join graph_phase as tophase on edge.to = tophase.node_id and fromphase.phase = tophase.phase
+        join graph_phase as fromphase on edge."from" = fromphase.node_id
+        join graph_phase as tophase on edge."to" = tophase.node_id and fromphase.phase = tophase.phase
         join network_size as fromnetwork on fromnetwork.parent = fromphase.parent and fromnetwork.phase = fromphase.phase
         join network_size as tonetwork on tonetwork.parent = tophase.parent and tonetwork.phase = tophase.phase
         where fromphase.parent <> tophase.parent
