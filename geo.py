@@ -321,7 +321,7 @@ with con:
 
             #zero represents the node that will join two subgraphs together.
             zero = cursor.fetchone() #could be done by exefetch one but whatever
-            print("zero", zero)
+            print("zero", zero, 'not zero', not zero)
 
             #if there is no node that can join subgraphs together, this will not execute.
             if(not zero):
@@ -329,7 +329,7 @@ with con:
             
             # prints nodes that are updated
             cursor.execute(f"""
-            update graph_phase set parent = {min(zero[1],zero[2])}, traversed = true where parent in ({zero[1]},{zero[2]}) and phase = {ph};
+            update graph_phase set parent = {min(zero[0],zero[1])}, traversed = true where parent in ({zero[0]},{zero[1]}) and phase = {ph};
             """)
             print("phase", ph)
         rounds.append(datetime.now()-phasebegin)
