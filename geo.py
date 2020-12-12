@@ -13,7 +13,7 @@ import json
 from shapely.geometry import shape, Polygon
 
 # for some reason this prevents the db for getting upset with "duplicate values" in candidate_edges. probable a concurrency issue
-con.autocommit = True
+
 
 # a shortcut to execute a query and return all results
 def exe_fetch(cursor, query):
@@ -36,7 +36,7 @@ def get_first(tuple):
 # This is the first statement. It gets a graph from OpenStreetMap based on the geocodable area retrieved from the user.
 name = input("Choose city or area:")
 download = datetime.now()
-# G = ox.get_undirected(ox.graph_from_place(name, network_type='drive', retain_all=True))
+G = ox.get_undirected(ox.graph_from_place(name, network_type='drive', retain_all=True))
 # G = ox.get_undirected(ox.graph_from_place(name, custom_filter='["highway"~"motorway|trunk"]', retain_all=True))
 # G = ox.get_undirected(ox.graph_from_place(name, custom_filter='["highway"~"motorway"]', retain_all=True))
 # G = ox.get_undirected(ox.graph_from_place(name, custom_filter='["highway"~"primary|trunk"]', retain_all=True))
@@ -44,17 +44,17 @@ download = datetime.now()
 # G = ox.get_undirected(ox.graph_from_place(name, custom_filter='["highway"~"motorway|primary|trunk|secondary"]', retain_all=True))
 # G = ox.get_undirected(ox.graph_from_place(["Brooklyn, NY","Queens, NY", "Nassau County, NY", "Suffolk County, NY"], custom_filter='["highway"~"motorway|primary|trunk|secondary|tertiary"]', retain_all=True))
 
-# https://medium.com/@pramukta/recipe-importing-geojson-into-shapely-da1edf79f41d
-with open("shape/oysterbay-glencove.geojsonl.json") as f:
-  feature = json.load(f)
+# # https://medium.com/@pramukta/recipe-importing-geojson-into-shapely-da1edf79f41d
+# with open("shape/oysterbay-glencove.geojsonl.json") as f:
+#   feature = json.load(f)
 
-# print(feature['geometry'])
-# print([shape(feature["geometry"]).buffer(0) for feature in features])
+# # print(feature['geometry'])
+# # print([shape(feature["geometry"]).buffer(0) for feature in features])
 
-# # NOTE: buffer(0) is a trick for fixing scenarios where polygons have overlapping coordinates 
-north_shore = Polygon(shape(feature['geometry']))
+# # # NOTE: buffer(0) is a trick for fixing scenarios where polygons have overlapping coordinates 
+# north_shore = Polygon(shape(feature['geometry']))
 
-G = ox.get_undirected(ox.graph_from_polygon(north_shore,network_type='drive',retain_all=True))
+# G = ox.get_undirected(ox.graph_from_polygon(north_shore,network_type='drive',retain_all=True))
 
 #don't need to plot this below bc it holds the thing up
 # fig, ax = ox.plot_graph(G, figsize=(10,10), node_color='orange', node_size=30,
@@ -63,13 +63,137 @@ print("processing has begun",f"nodes: {G.number_of_nodes()}", f"edges: {G.number
 beginning = datetime.now()
 print(f"download time: {beginning - download}")
 # imports the graph into the databate and processes the graph
-with con.cursor() as cursor:
+with con:
+    cursor = con.cursor()
+
+    cursor.executescript("""
+        drop table if exists node;
+        create table node
+        (
+            id bigint not null,
+            lat double precision,
+            lon double precision,
+            constraint node_pkey
+                primary key (id)
+        );
+
+        select rowid, * from node;
+        insert into node values(3, 44, 45);
+
+        create index node_id_idx
+            on node (id);
+
+        drop table if exists candidate_edge;
+        create table candidate_edge
+        (
+            fromparent bigint,
+            toparent bigint,
+            gateway_size double precision,
+            phase integer,
+            constraint candidate_edge_unique
+                unique(fromparent,toparent,phase),
+            constraint candidate_edge_fromparent_fkey
+                foreign key (fromparent) references node(id)
+                    on update cascade on delete cascade,
+            constraint candidate_edge_toparent_fkey
+                foreign key (toparent) references node(id)
+                    on update cascade on delete cascade
+        );
+
+        create index candidate_edge_gateway_size_idx
+            on candidate_edge (gateway_size);
+
+        create index candidate_edge_fromparent_idx
+            on candidate_edge (fromparent);
+
+        create index candidate_edge_toparent_idx
+            on candidate_edge (toparent);
+
+        create index candidate_edge_phase_index
+            on candidate_edge (phase);
+
+        create index candidate_edge_phase_gateway_size_index
+            on candidate_edge (phase, gateway_size);
+
+        drop table if exists edge;
+        create table edge
+        (
+            "from" bigint,
+            "to" bigint,
+            length double precision,
+            constraint edge_unique
+                unique("from","to"),
+            constraint edge_from_fkey
+                foreign key ("from") references node(id)
+                    on update cascade on delete cascade,
+            constraint edge_to_fkey
+                foreign key ("to") references node(id)
+                    on update cascade on delete cascade
+        );
+
+        create index edge_length_idx
+            on edge (length);
+
+        create index edge_from_idx
+            on edge ("from");
+
+        create index edge_to_idx
+            on edge ("to");
+
+        drop table if exists graph_phase;
+        create table graph_phase
+        (
+            phase integer not null,
+            node_id bigint not null,
+            parent bigint,
+            traversed boolean default false,
+            constraint graph_phase_unique
+                unique(phase, node_id),
+            constraint graph_phase_node_id_fkey
+                foreign key (node_id) references node
+                    on update cascade on delete cascade,
+            constraint graph_phase_parent_fkey
+                foreign key (parent) references node
+                    on update cascade on delete cascade
+        );
+
+        create index phase_idx
+            on graph_phase (phase);
+
+        create index graph_phase_parent_idx
+            on graph_phase (parent);
+
+        create index graph_phase_node_id_idx
+            on graph_phase (node_id);
+
+        drop table if exists network_size;
+        create table network_size
+        (
+            parent bigint not null,
+            sum_length double precision,
+            phase integer,
+            constraint network_size_unique
+                unique (parent, phase),
+            constraint network_size_parent_fkey
+                foreign key (parent) references node
+                    on update cascade on delete cascade
+        );
+
+        create index network_size_sum_length_idx
+            on network_size (sum_length);
+
+        create index network_size_parent_idx
+            on network_size (parent);
+
+        create index network_size_phase_index
+            on network_size (phase);
+    """)
 
     #For each node, inserts into the "node" table.
     #The "node" table has "id", "lat", and "lon" columns
-    psycopg2.extras.execute_values(cursor, """
-        INSERT INTO node(id, lat, lon) VALUES %s;
-    """, ((
+    # with sqlite3: cursor.executemany instead of p2.extras.e_v(cursor,), where values is (?,?,?)
+    cursor.executemany(
+        'INSERT INTO node(id, lat, lon) VALUES (?,?,?);',((
         n,
         data['y'],
         data['x']
@@ -78,18 +202,16 @@ with con.cursor() as cursor:
     #For each node, inserts the node with itself as its parent and 0 as its phase into the "graph_phase" table
     #The "graph_phase" table has the columns "phase", "node_id", "parent", and "traversed"
     #Through the process of this script, sets of nodes (i.e. subgraphs) with different parents in one phace will receive different parents in the next phase until it is not possible to continue this operation.
-    psycopg2.extras.execute_values(cursor, """
-        INSERT INTO graph_phase(phase, node_id, parent) VALUES %s;
-    """, ((
+    cursor.executemany(
+        'INSERT INTO graph_phase(phase, node_id, parent) VALUES (?,?,?);',((
         0,
         n,
         n
     ) for n, data, in G.nodes(data=True)))
 
     #For each edge, inserts "from" node, "to" node, and edge "length"
-    psycopg2.extras.execute_values(cursor, """
-        INSERT INTO edge("from", "to", length) VALUES %s;
-    """, ((
+    cursor.executemany(
+        'INSERT INTO edge("from", "to", length) VALUES (?,?,?);',((
         u,
         v,
         data['length']
@@ -169,6 +291,7 @@ with con.cursor() as cursor:
         group by fromphase.parent, tophase.parent, fromnetwork.sum_length, tonetwork.sum_length
         order by gateway_size);
         """)
+        #probably don't need orderby, but it might help the indexing ^^
 
         #deletes old candidates
         # cursor.execute("delete from candidate_edge;")
@@ -196,7 +319,7 @@ with con.cursor() as cursor:
             # combine_edges.from <> combine_edges.to prevents culdesacs from messing the procedure up
 
             #zero represents the node that will join two subgraphs together.
-            zero = cursor.fetchone()
+            zero = cursor.fetchone() #could be done by exefetch one but whatever
             print("zero", zero)
 
             #if there is no node that can join subgraphs together, this will not execute.
@@ -204,9 +327,9 @@ with con.cursor() as cursor:
                 break
             
             # prints nodes that are updated
-            print(exe_fetch(cursor, f"""
+            cursor.execute(f"""
             update graph_phase set parent = {min(zero[1],zero[2])}, traversed = true where parent in ({zero[1]},{zero[2]}) and phase = {ph};
-            """))
+            """)
             print("phase", ph)
         rounds.append(datetime.now()-phasebegin)
     

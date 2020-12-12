@@ -1,13 +1,6 @@
-import psycopg2
+import sqlite3
 
-con = psycopg2.connect(
-    host = 'localhost',
-    database='mander',
-    user='',
-    password=''
-)
-
-con.autocommit = True
+con = sqlite3.connect(':memory:', isolation_level=None)
 
 # cur = con.cursor()
 
