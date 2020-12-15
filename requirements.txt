@@ -4,6 +4,7 @@ async-generator==1.10
 attrs==20.2.0
 backcall==0.2.0
 bleach==3.2.1
+blessed==1.17.6
 certifi==2020.6.20
 cffi==1.14.3
 chardet==3.0.4
@@ -18,6 +19,7 @@ entrypoints==0.3
 Fiona==1.8.17
 geopandas==0.8.1
 idna==2.10
+inquirer==2.7.0
 ipykernel==5.3.4
 ipython==7.18.1
 ipython-genutils==0.2.0
@@ -60,8 +62,10 @@ pyparsing==2.4.7
 pyproj==2.6.1.post1
 pyrsistent==0.17.3
 python-dateutil==2.8.1
+python-editor==1.0.4
 pytz==2020.1
 pyzmq==19.0.2
+readchar==2.0.1
 requests==2.24.0
 Rtree==0.9.4
 Send2Trash==1.5.0

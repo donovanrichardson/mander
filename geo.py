@@ -12,9 +12,7 @@ from datetime import datetime
 import json
 from shapely.geometry import shape, Polygon
 from math import log
-
-# for some reason this prevents the db for getting upset with "duplicate values" in candidate_edges. probable a concurrency issue
-
+import inquirer
 
 # a shortcut to execute a query and return all results
 def exe_fetch(cursor, query):
@@ -33,36 +31,58 @@ def get_first(tuple):
 con.create_function("power", 2, lambda x, y: x**y)
 con.create_function("log", 1, lambda x: log(x,10))
 
-# commented this out because I don't want to get a specific position
-# address = '731 Park Avenue, Huntington NY, 11743'
-# G = ox.get_undirected(ox.graph_from_address(address, network_type='drive', dist=3000, retain_all=True))
-
-# This is the first statement. It gets a graph from OpenStreetMap based on the geocodable area retrieved from the user.
-name = input("Choose city or area:")
+# name = input("Choose city or area:")
 download = datetime.now()
-# G = ox.get_undirected(ox.graph_from_place(name, network_type='drive', retain_all=True))
-# G = ox.get_undirected(ox.graph_from_place(name, custom_filter='["highway"~"motorway|trunk"]', retain_all=True))
-# G = ox.get_undirected(ox.graph_from_place(name, custom_filter='["highway"~"motorway"]', retain_all=True))
-# G = ox.get_undirected(ox.graph_from_place(name, custom_filter='["highway"~"primary|trunk"]', retain_all=True))
-# G = ox.get_undirected(ox.graph_from_place(name, custom_filter='["highway"~"motorway|primary|trunk"]', retain_all=True))
-# G = ox.get_undirected(ox.graph_from_place(name, custom_filter='["highway"~"motorway|primary|trunk|secondary"]', retain_all=True))
-G = ox.get_undirected(ox.graph_from_place(["Brooklyn, NY","Queens, NY", "Nassau County, NY", "Suffolk County, NY"], custom_filter='["highway"~"motorway|primary|trunk|secondary|tertiary"]', retain_all=True))
+
+allRoadsQ = [
+    inquirer.Confirm('roads', message="Would you like to include all roads in your query?", default=False)
+]
+
+selectRoadsQ = [
+    inquirer.Confirm('highway', message="Would you like to include highways?", default=True),
+    inquirer.List('pst', message="Which classes of roads would you like to include down to?", choices=['primary','secondary','tertiary','none'])
+    ]
+
+geographyQ = [
+    inquirer.Text('geog',message="Enter your desired geography")
+]
+
+name = inquirer.prompt(geographyQ)['geog']
+
+allRoads = inquirer.prompt(allRoadsQ)
+
+if(not allRoads['roads']):
+    
+    pstQuery = {}
+    pstQuery['none'] = ''
+    pstQuery['primary'] = 'primary'
+    pstQuery['secondary'] = pstQuery['primary'] + '|secondary'
+    pstQuery['tertiary'] = pstQuery['secondary'] + '|tertiary'
+
+    '["highway"~"motorway|trunk|primary|secondary|tertiary"]'
+    selectRoads = inquirer.prompt(selectRoadsQ)
+    separator = '|' if selectRoads['highway'] and selectRoads['pst'] != 'none' else ''
+    highway = 'motorway|trunk' if selectRoads['highway'] else ''
+    # print(selectRoads)
+    cf = f"""["highway"~"{highway}{separator}{pstQuery[selectRoads['pst']]}"]"""
+    G = ox.get_undirected(ox.graph_from_place(name, custom_filter=cf, retain_all=True))
+else:
+    G = ox.get_undirected(ox.graph_from_place(name, network_type='drive', retain_all=True))
+
+### These comments will help me figure out how to prompt for filenames by searching the filesystem
 
 # # https://medium.com/@pramukta/recipe-importing-geojson-into-shapely-da1edf79f41d
-# with open("shape/oysterbay-glencove.geojsonl.json") as f:
+# with open("shape/mappingamerica/bostonland-dissolved2.geojsonl.json") as f:
 #   feature = json.load(f)
 
-# # print(feature['geometry'])
-# # print([shape(feature["geometry"]).buffer(0) for feature in features])
 
-# # # NOTE: buffer(0) is a trick for fixing scenarios where polygons have overlapping coordinates 
-# north_shore = Polygon(shape(feature['geometry']))
+# # NOTE: buffer(0) is a trick for fixing scenarios where polygons have overlapping coordinates 
+# north_shore = Polygon(shape(feature['geometry']).buffer(0)) 
 
+# # G = ox.get_undirected(ox.graph_from_polygon(north_shore,network_type='drive',retain_all=True))
+# # G = ox.get_undirected(ox.graph_from_polygon(north_shore,custom_filter='["highway"~"motorway|primary|trunk|secondary|tertiary"]',retain_all=True))
 # G = ox.get_undirected(ox.graph_from_polygon(north_shore,network_type='drive',retain_all=True))
 
-#don't need to plot this below bc it holds the thing up
-# fig, ax = ox.plot_graph(G, figsize=(10,10), node_color='orange', node_size=30,
-# node_zorder=2, node_edgecolor='k')
 print("processing has begun",f"nodes: {G.number_of_nodes()}", f"edges: {G.number_of_edges()}")
 beginning = datetime.now()
 print(f"download time: {beginning - download}")
@@ -359,6 +379,7 @@ with con:
             G.nodes[i][j] = parent
     
     try:
+        print('exporting to csv')
         with open(f"{name}.csv", 'w') as csvfile:
             columns = ['x','y','osmid']
             for k in range(0, max_phase + 1):
@@ -367,6 +388,11 @@ with con:
             writer.writeheader()
             for data in G.nodes(data=True):
                 writer.writerow(data[1])
+        print('creating sql dump')
+        # https://stackoverflow.com/a/24106471
+        with open(f"{name}.sql", 'w') as sqldump:
+            for line in con.iterdump():
+                sqldump.write('%s\n' % line)
     except IOError:
         print("I/O error")
     
@@ -378,41 +404,4 @@ with con:
 
 con.close()
 
-
-# get edge info
-# select min(fromphase.phase) as joinphase, edge.* from edge join graph_phase as fromphase on edge.from = fromphase.node_id join graph_phase as tophase on edge.to = tophase.node_id and tophase.phase =fromphase.phase where fromphase.parent = tophase.parent group by edge.id order by joinphase desc, edge.length desc; 
-
-# see the traversal 
-# select count(*), parent, phase from graph_phase where traversed group by parent, phase order by phase desc , parent;
-
-#analysis
-# select distinct parent, phase from graph_phase order by parent, phase;
-
-# select min(fromphase.phase) as joinphase, edge.* from edge join graph_phase as fromphase on edge.from = fromphase.node_id join graph_phase as tophase on edge.to = tophase.node_id and tophase.phase =fromphase.phase where fromphase.parent = tophase.parent group by edge.id order by joinphase desc, edge.length desc;
-
-
-# next try graph_from_place for jefferson county ny
-            # select edge.id, fromphase.parent, tophase.parent, edge.length * least(fromnetwork.sum_length,  tonetwork.sum_length) as gateway_size, count(combine_edges.id) from edge
-            # join node as "from" on edge.from = "from".id
-            # join node as "to" on edge.to = "to".id
-            # join graph_phase as fromphase on "from".id = fromphase.node_id
-            # join graph_phase as tophase on "to".id = tophase.node_id and fromphase.phase = tophase.phase 
-            # join edge as combine_edges on combine_edges.from in fromphase.node_id or combine_edges.from in tophase.node_id or combine_edges.to in fromphase.node_id or combine_edges.to in tophase.node_id
-            # join network_size as fromnetwork on fromnetwork.parent = fromphase.parent
-            # join network_size as tonetwork on tonetwork.parent = tophase.parent
-            # and fromphase.traversed = tophase.traversed
-            # where fromphase.parent <> tophase.parent 
-            # and fromphase.phase={ph}
-            # and fromphase.traversed = false
-            # group by edge.id
-            # order by gateway_size;
-
-# for i in edgescore:
-#     G[i[1]][i[2]][0]['color'] = i[0]
-
-# max_phase = exe_fetchone(cursor, "select max(phase) from graph_phase")[0]
-
-# delete from node;
-
-# select count(*), phase from graph_phase where not traversed and phase = (select max(phase) from graph_phase) group by phase;
 

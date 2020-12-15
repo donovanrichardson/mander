@@ -14,3 +14,4 @@ dumps
 notebooks
 *.csv
 shap.py
+*.sql
