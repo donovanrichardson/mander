@@ -13,6 +13,8 @@ import json
 from shapely.geometry import shape, Polygon
 from math import log
 import inquirer
+import glob
+
 
 # a shortcut to execute a query and return all results
 def exe_fetch(cursor, query):
@@ -31,12 +33,19 @@ def get_first(tuple):
 con.create_function("power", 2, lambda x, y: x**y)
 con.create_function("log", 1, lambda x: log(x,10))
 
-# name = input("Choose city or area:")
-download = datetime.now()
+filenames = glob.glob('./*.json')
+filenames.sort()
+
 
 allRoadsQ = [
     inquirer.Confirm('roads', message="Would you like to include all roads in your query?", default=False)
 ]
+
+jsonQ = [
+    inquirer.Confirm('json', message="Would you like to query from GeoJSON?", default=True),
+]
+
+fileQ = [    inquirer.List('file', message="Which file would you like to use", choices=filenames)]
 
 selectRoadsQ = [
     inquirer.Confirm('highway', message="Would you like to include highways?", default=True),
@@ -65,23 +74,46 @@ if(not allRoads['roads']):
     highway = 'motorway|trunk' if selectRoads['highway'] else ''
     # print(selectRoads)
     cf = f"""["highway"~"{highway}{separator}{pstQuery[selectRoads['pst']]}"]"""
-    G = ox.get_undirected(ox.graph_from_place(name, custom_filter=cf, retain_all=True))
+    settings = {"custom": cf}
+    # G = ox.get_undirected(ox.graph_from_place(name, custom_filter=cf, retain_all=True))
 else:
-    G = ox.get_undirected(ox.graph_from_place(name, network_type='drive', retain_all=True))
+    settings = {"custom": None}
+    # G = ox.get_undirected(ox.graph_from_place(name, network_type='drive', retain_all=True))
+
+jsonAns = inquirer.prompt(jsonQ)
+settings['json'] = jsonAns['json'] # having the settings dict is a bit sloppy if i only need one item from it. the json item isnt used.
+print(jsonAns)
+if (jsonAns['json']):
+    fileAns = inquirer.prompt(fileQ)
+    with open(fileAns['file']) as f:
+        geojson = json.load(f)
+
+
+        # NOTE: buffer(0) is a trick for fixing scenarios where polygons have overlapping coordinates 
+    polygon = Polygon(shape(geojson['geometry']).buffer(0))
+    download = datetime.now()
+    print('download', download)
+    G = ox.get_undirected(ox.graph_from_polygon(polygon,network_type='drive',custom_filter=settings['custom'], retain_all=True))
+else:
+    download = datetime.now()
+    print('download', download)
+    G = ox.get_undirected(ox.graph_from_place(name,network_type='drive',custom_filter=settings['custom'], retain_all=True))
+
+
 
 ### These comments will help me figure out how to prompt for filenames by searching the filesystem
 
 # # https://medium.com/@pramukta/recipe-importing-geojson-into-shapely-da1edf79f41d
-# with open("shape/mappingamerica/bostonland-dissolved2.geojsonl.json") as f:
-#   feature = json.load(f)
+# with open("shape/north-jersey/commnor.geojsonl.json") as f:
+#   geojson = json.load(f)
 
 
 # # NOTE: buffer(0) is a trick for fixing scenarios where polygons have overlapping coordinates 
-# north_shore = Polygon(shape(feature['geometry']).buffer(0)) 
+# polygon = Polygon(shape(geojson['geometry']).buffer(0)) 
 
-# # G = ox.get_undirected(ox.graph_from_polygon(north_shore,network_type='drive',retain_all=True))
-# # G = ox.get_undirected(ox.graph_from_polygon(north_shore,custom_filter='["highway"~"motorway|primary|trunk|secondary|tertiary"]',retain_all=True))
-# G = ox.get_undirected(ox.graph_from_polygon(north_shore,network_type='drive',retain_all=True))
+
+# # G = ox.get_undirected(ox.graph_from_polygon(polygon,custom_filter='["highway"~"motorway|primary|trunk|secondary"]',retain_all=True))
+# G = ox.get_undirected(ox.graph_from_polygon(polygon,network_type='drive',retain_all=True))
 
 print("processing has begun",f"nodes: {G.number_of_nodes()}", f"edges: {G.number_of_edges()}")
 beginning = datetime.now()
@@ -302,7 +334,7 @@ with con:
         # gets new candidates
         cursor.execute(f"""
         insert into candidate_edge(gateway_size, fromparent, toparent, phase) 
-        select (power(10,avg(log(edge.length))) * min(fromnetwork.sum_length,  tonetwork.sum_length))/ count(*) as gateway_size, fromphase.parent, tophase.parent, {ph} from edge
+        select (power(10,avg(log(edge.length + .01))) * min(fromnetwork.sum_length,  tonetwork.sum_length))/ count(*) as gateway_size, fromphase.parent, tophase.parent, {ph} from edge
         join graph_phase as fromphase on edge."from" = fromphase.node_id
         join graph_phase as tophase on edge."to" = tophase.node_id and fromphase.phase = tophase.phase
         join network_size as fromnetwork on fromnetwork.parent = fromphase.parent and fromnetwork.phase = fromphase.phase
@@ -380,7 +412,8 @@ with con:
     
     try:
         print('exporting to csv')
-        with open(f"{name}.csv", 'w') as csvfile:
+        csv_name = f"{name}.csv"
+        with open(csv_name, 'w') as csvfile:
             columns = ['x','y','osmid']
             for k in range(0, max_phase + 1):
                 columns.append(k)
@@ -390,7 +423,8 @@ with con:
                 writer.writerow(data[1])
         print('creating sql dump')
         # https://stackoverflow.com/a/24106471
-        with open(f"{name}.sql", 'w') as sqldump:
+        sql_name = f"{name}.sql"
+        with open(sql_name, 'w') as sqldump:
             for line in con.iterdump():
                 sqldump.write('%s\n' % line)
     except IOError:
@@ -403,5 +437,7 @@ with con:
     # fig2, ax2 = ox.plot_graph(G, figsize=(10,10), node_size=10, node_zorder=2, node_color=nc)
 
 con.close()
+print(csv_name, "exported")
+print(sql_name, "exported")
 
 
