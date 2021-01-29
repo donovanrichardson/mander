@@ -97,7 +97,7 @@ if (jsonAns['json']):
 else:
     download = datetime.now()
     print('download', download)
-    G = ox.get_undirected(ox.graph_from_place(name,network_type='drive',custom_filter=settings['custom'], retain_all=True))
+    G = ox.get_undirected(ox.graph_from_place(name,network_type='drive',custom_filter=settings['custom'], retain_all=True)) #try network_type='all'
 
 
 
