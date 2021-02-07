@@ -129,12 +129,10 @@ with con:
             id bigint not null,
             lat double precision,
             lon double precision,
+            district bigint,
             constraint node_pkey
                 primary key (id)
         );
-
-        select rowid, * from node;
-        insert into node values(3, 44, 45);
 
         create index node_id_idx
             on node (id);
@@ -401,14 +399,30 @@ with con:
     # ec = ox.plot.get_edge_colors_by_attr(G, attr='color')
 
 
+    districting = datetime.now()
     graph_nodes = G.nodes
     max_phase = exe_fetchone(cursor, "select max(phase) from graph_phase")[0]
     # adds parent properties from the "graph_nodes" table in the DB for each node in the greaph
     for i in graph_nodes:
         # print(i)
+        phase = exe_fetch(cursor, f"select parent from graph_phase where node_id = {i} order by phase desc")
+        district = 1
+        for p in range(len(phase) - 1):
+            district *= 2
+            if(phase[p][0]!=phase[p+1][0]): #index 0 is the only index, representing parent
+                district+=1
+        cursor.execute(f"update node set district = {district} where id = {i}")
         for j in range(0, max_phase+1):
             parent = exe_fetchone(cursor, f"select parent from graph_phase where node_id = {i} and phase = {j}")[0]
             G.nodes[i][j] = parent
+    
+    
+    print(f"districting and phasing: {datetime.now() - districting}")
+    
+
+    # for row in exe_fetch(cursor, "select id from node"):
+        # id = row["id"]
+        
     
     try:
         print('exporting to csv')
