@@ -77,7 +77,7 @@ if(not allRoads['roads']):
     settings = {"custom": cf}
     # G = ox.get_undirected(ox.graph_from_place(name, custom_filter=cf, retain_all=True))
 else:
-    settings = {"custom": None}
+    settings = {"custom": '["highway"]["area"!~"yes"]["highway"!~"cycleway|footway|path|pedestrian|steps|track|corridor|elevator|escalator|proposed|construction|bridleway|abandoned|platform|raceway|service"]["motor_vehicle"!~"no"]["motorcar"!~"no"]["service"!~"parking|parking_aisle|driveway|emergency_access"]'}
     # G = ox.get_undirected(ox.graph_from_place(name, network_type='drive', retain_all=True))
 
 jsonAns = inquirer.prompt(jsonQ)
