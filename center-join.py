@@ -33,7 +33,7 @@ def exe_fetchone(cursor, query):
 
 # con.row_factory = sqlite3.Row
 with con:
-    begin = datetime.now()
+
     cursor = con.cursor()
 
     # cursor.executescript(the_file.read())
@@ -55,6 +55,7 @@ with con:
         phase = inquirer.prompt(phaseQ)['phase']
         centers = (centers,)
 
+        begin = datetime.now()
 
         while(phase >0):
             query = f"""
@@ -78,7 +79,15 @@ with con:
             """
             print(phase)
             result = exe_fetch_params(cursor, query, (phase,phase,phase,phase,phase))
+            old_center = centers[0]
             centers = tuple(map(lambda j: str(j[1]), filter(lambda i: i[0] == result[0][0], result)))
+            intermediate = ""
+            for c in centers:
+                intermediate += str(c) + ' '
+            print(intermediate)
+            if len(centers) == 0: #necessary if none of the old centers have children in this phase
+                centers = [old_center]
+                break
             phase -=1
             
         print(centers[0])
