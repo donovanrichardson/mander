@@ -87,7 +87,7 @@ with con:
             print(intermediate)
             if len(centers) == 0: #necessary if none of the old centers have children in this phase
                 centers = [old_center]
-                break
+                # break
             phase -=1
             
         print(centers[0])
