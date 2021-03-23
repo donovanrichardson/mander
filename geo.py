@@ -95,9 +95,18 @@ if (jsonAns['json']):
     print('download', download)
     G = ox.get_undirected(ox.graph_from_polygon(polygon,network_type='drive',custom_filter=settings['custom'], retain_all=True))
 else:
-    download = datetime.now()
-    print('download', download)
-    G = ox.get_undirected(ox.graph_from_place(name,network_type='drive',custom_filter=settings['custom'], retain_all=True)) #try network_type='all'
+    networkQ = [
+        inquirer.Confirm('network', message="Would you like to query from a distance of 8000m?", default=False),
+    ]
+    networkAns = inquirer.prompt(networkQ)
+    if(networkAns['network']):
+        download = datetime.now()
+        print('download', download)
+        G = ox.get_undirected(ox.graph_from_point(ox.geocode(name),network_type='drive',dist=8000,dist_type='network',custom_filter=settings['custom'], retain_all=True)) #try network_type='all'
+    else:
+        download = datetime.now()
+        print('download', download)
+        G = ox.get_undirected(ox.graph_from_place(name,network_type='drive',custom_filter=settings['custom'], retain_all=True)) #try network_type='all'
 
 
 
@@ -386,9 +395,14 @@ with con:
     
     for idx, val in enumerate(rounds):
         print(idx+1, val)
-    print(f"nodes: {G.number_of_nodes()}", f"edges: {G.number_of_edges()}")
-    print("processing complete: HMS=", datetime.now() - beginning)
-    print(f"download time: {beginning - download}")
+
+    phases = str(len(rounds) + 1) + " phases"
+    nedges = f"nodes: {G.number_of_nodes()} edges: {G.number_of_edges()}"
+    process="processing complete: HMS= " + str(datetime.now() - beginning)
+    download=f"download time: {beginning - download}"
+    print(nedges)
+    print(process)
+    print(download)
 
     # mycolors = []
     # graph_edges = G.edges
@@ -416,8 +430,8 @@ with con:
             parent = exe_fetchone(cursor, f"select parent from graph_phase where node_id = {i} and phase = {j}")[0]
             G.nodes[i][j] = parent
     
-    
-    print(f"districting and phasing: {datetime.now() - districting}")
+    dandp= f"districting and phasing: {datetime.now() - districting}"
+    print(dandp)
     
 
     # for row in exe_fetch(cursor, "select id from node"):
@@ -441,6 +455,11 @@ with con:
         with open(sql_name, 'w') as sqldump:
             for line in con.iterdump():
                 sqldump.write('%s\n' % line)
+        with open(f"{name}.txt", 'w') as log:
+            loglist=[phases,nedges,process,download,dandp]
+            for line in loglist:
+                log.write('%s\n' % line)
+
     except IOError:
         print("I/O error")
     

@@ -16,3 +16,4 @@ notebooks
 shap.py
 *.sql
 *.geojsonl.json
+*.txt
