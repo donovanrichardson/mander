@@ -2,6 +2,7 @@ import sqlite3
 from db import con
 import inquirer
 import glob
+from datetime import datetime
 
 
 
@@ -31,8 +32,8 @@ def exe_fetchone(cursor, query):
 
 
 # con.row_factory = sqlite3.Row
-
 with con:
+
     cursor = con.cursor()
 
     # cursor.executescript(the_file.read())
@@ -54,29 +55,44 @@ with con:
         phase = inquirer.prompt(phaseQ)['phase']
         centers = (centers,)
 
+        begin = datetime.now()
 
         while(phase >0):
             query = f"""
-            select count(*) num_neighs, *, ? phase from
+            select count(*) num_neighs, *, ? - 1 phase from
             (select distinct child.parent,
-            coalesce((case when child.parent <> fromparent.parent then fromparent.parent else null end),
-                (case when child.parent <> toparent.parent then toparent.parent else null end)) as neighbor
+            coalesce((case when child.parent <> fromchild.parent then fromchild.parent else null end),
+                (case when child.parent <> tochild.parent then tochild.parent else null end)) as neighbor
             from graph_phase
                 join graph_phase as child on child.node_id = graph_phase.node_id
                 join edge on edge."from" = child.node_id or edge."to" = child.node_id
-                join graph_phase as fromparent on edge."from" = fromparent.node_id and child.phase = fromparent.phase
-                join graph_phase as toparent on edge."to" = toparent.node_id and child.phase = toparent.phase
+                join graph_phase as fromchild on edge."from" = fromchild.node_id and child.phase = fromchild.phase
+                join graph_phase as fromparent on fromchild.node_id = fromparent.node_id and fromparent.phase= ?
+                join graph_phase as tochild on edge."to" = tochild.node_id and child.phase = tochild.phase
+                join graph_phase as toparent on tochild.node_id = toparent.node_id and toparent.phase= ?
             where graph_phase.phase = ?
             and graph_phase.parent in ({','.join(centers)})
-            and child.phase=? and neighbor not null)
+            and fromparent.parent in ({','.join(centers)})
+            and toparent.parent in ({','.join(centers)})
+            and child.phase=?-1 and neighbor not null)
                 as temp group by parent order by num_neighs desc, parent;
             """
             print(phase)
-            result = exe_fetch_params(cursor, query, (phase-1,phase,phase-1))
+            result = exe_fetch_params(cursor, query, (phase,phase,phase,phase,phase))
+            old_center = centers[0]
             centers = tuple(map(lambda j: str(j[1]), filter(lambda i: i[0] == result[0][0], result)))
+            intermediate = ""
+            for c in centers:
+                intermediate += str(c) + ' '
+            print(intermediate)
+            if len(centers) == 0: #necessary if none of the old centers have children in this phase
+                centers = [old_center]
+                # break
             phase -=1
             
         print(centers[0])
+        print(datetime.now() - begin)
 
         askQ = [inquirer.Confirm('ask',message="Continue?")]
         ask = inquirer.prompt(askQ)['ask']
+        
