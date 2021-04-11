@@ -17,3 +17,5 @@ shap.py
 *.sql
 *.geojsonl.json
 *.txt
+*.log
+penn-2-6.geojson

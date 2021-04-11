@@ -14,7 +14,7 @@ from shapely.geometry import shape, Polygon
 from math import log
 import inquirer
 import glob
-
+import re
 
 # a shortcut to execute a query and return all results
 def exe_fetch(cursor, query):
@@ -96,13 +96,20 @@ if (jsonAns['json']):
     G = ox.get_undirected(ox.graph_from_polygon(polygon,network_type='drive',custom_filter=settings['custom'], retain_all=True))
 else:
     networkQ = [
-        inquirer.Confirm('network', message="Would you like to query from a distance of 8000m?", default=False),
+        inquirer.Confirm('network', message="Would you like to query from a specified distance?", default=False),
+    ]
+    metersQ =[
+        inquirer.Text('meters', message="how many meters?",validate=lambda _, x: re.match('\d+', x)),
+        inquirer.List('dist_type', message='which distance type', choices=['bbox','network'])
     ]
     networkAns = inquirer.prompt(networkQ)
     if(networkAns['network']):
+        metersAns = inquirer.prompt(metersQ)
+        meters = int(metersAns['meters'])
+        dist = metersAns['dist_type']
         download = datetime.now()
         print('download', download)
-        G = ox.get_undirected(ox.graph_from_point(ox.geocode(name),network_type='drive',dist=8000,dist_type='network',custom_filter=settings['custom'], retain_all=True)) #try network_type='all'
+        G = ox.get_undirected(ox.graph_from_point(ox.geocode(name),network_type='drive',dist=meters,dist_type=dist,custom_filter=settings['custom'], retain_all=True)) #try network_type='all'
     else:
         download = datetime.now()
         print('download', download)
@@ -431,6 +438,8 @@ with con:
             G.nodes[i][j] = parent
     
     dandp= f"districting and phasing: {datetime.now() - districting}"
+    largest = exe_fetchone(cursor, f"select parent, count(*) nodes from graph_phase where phase = {len(rounds)} group by parent order by nodes desc")[1]
+    print(largest, "the largest")
     print(dandp)
     
 
@@ -455,7 +464,7 @@ with con:
         with open(sql_name, 'w') as sqldump:
             for line in con.iterdump():
                 sqldump.write('%s\n' % line)
-        with open(f"{name}.txt", 'w') as log:
+        with open(f"{name}.log", 'w') as log:
             loglist=[phases,nedges,process,download,dandp]
             for line in loglist:
                 log.write('%s\n' % line)
