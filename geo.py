@@ -348,7 +348,7 @@ with con:
         # gets new candidates
         cursor.execute(f"""
         insert into candidate_edge(gateway_size, fromparent, toparent, phase) 
-        select (1.0/sum(1.0/(edge.length + .01))) * min(fromnetwork.sum_length,  tonetwork.sum_length))/ count(*) as gateway_size, fromphase.parent, tophase.parent, {ph} from edge
+        select (1.0/sum(1.0/(edge.length + .01))) * min(fromnetwork.sum_length,  tonetwork.sum_length)) as gateway_size, fromphase.parent, tophase.parent, {ph} from edge
         join graph_phase as fromphase on edge."from" = fromphase.node_id
         join graph_phase as tophase on edge."to" = tophase.node_id and fromphase.phase = tophase.phase
         join network_size as fromnetwork on fromnetwork.parent = fromphase.parent and fromnetwork.phase = fromphase.phase
