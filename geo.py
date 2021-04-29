@@ -38,7 +38,7 @@ filenames.sort()
 
 
 allRoadsQ = [
-    inquirer.Confirm('roads', message="Would you like to include all roads in your query?", default=False)
+    inquirer.Confirm('roads', message="Would you like to include a fine variety of roads in your query?", default=False)
 ]
 
 jsonQ = [
@@ -77,7 +77,12 @@ if(not allRoads['roads']):
     settings = {"custom": cf}
     # G = ox.get_undirected(ox.graph_from_place(name, custom_filter=cf, retain_all=True))
 else:
-    settings = {"custom": '["highway"]["area"!~"yes"]["highway"!~"cycleway|footway|path|steps|track|corridor|elevator|escalator|proposed|construction|bridleway|abandoned|platform|raceway"]["motor_vehicle"!~"no"]["motorcar"!~"no"]["service"!~"parking|parking_aisle|driveway|emergency_access"]'}
+    vFineQ = [inquirer.Confirm('vfine', message="Would you like to include a Very Fine variety of roads?", default=False)]
+    vFine = inquirer.prompt(vFineQ)['vfine']
+    if vFine:
+        settings = {"custom": '["highway"]["area"!~"yes"]["highway"!~"corridor|elevator|escalator|proposed|construction|bridleway|abandoned|platform|raceway"]["service"!~"parking|parking_aisle|driveway|emergency_access"]'}
+    else:
+        settings = {"custom": '["highway"]["area"!~"yes"]["highway"!~"cycleway|footway|path|steps|track|corridor|elevator|escalator|proposed|construction|bridleway|abandoned|platform|raceway"]["motor_vehicle"!~"no"]["motorcar"!~"no"]["service"!~"parking|parking_aisle|driveway|emergency_access"]'}
     # G = ox.get_undirected(ox.graph_from_place(name, network_type='drive', retain_all=True))
 
 jsonAns = inquirer.prompt(jsonQ)
@@ -348,7 +353,7 @@ with con:
         # gets new candidates
         cursor.execute(f"""
         insert into candidate_edge(gateway_size, fromparent, toparent, phase) 
-        select (1.0/sum(1.0/(edge.length + .01))) * min(fromnetwork.sum_length,  tonetwork.sum_length))/ count(*) as gateway_size, fromphase.parent, tophase.parent, {ph} from edge
+        select ((1.0/sum(1.0/(edge.length + .01))) * min(fromnetwork.sum_length,  tonetwork.sum_length))/ count(*) as gateway_size, fromphase.parent, tophase.parent, {ph} from edge
         join graph_phase as fromphase on edge."from" = fromphase.node_id
         join graph_phase as tophase on edge."to" = tophase.node_id and fromphase.phase = tophase.phase
         join network_size as fromnetwork on fromnetwork.parent = fromphase.parent and fromnetwork.phase = fromphase.phase
