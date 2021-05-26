@@ -408,7 +408,7 @@ with con:
     for idx, val in enumerate(rounds):
         print(idx+1, val)
 
-    phases = str(len(rounds) + 1) + " phases"
+    phases = str(len(rounds) + 1) + " phases" # num of phases is diff from maxphase
     nedges = f"nodes: {G.number_of_nodes()} edges: {G.number_of_edges()}"
     process="processing complete: HMS= " + str(datetime.now() - beginning)
     download=f"download time: {beginning - download}"

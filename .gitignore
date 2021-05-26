@@ -19,3 +19,6 @@ shap.py
 *.txt
 *.log
 penn-2-6.geojson
+json
+*.geojson
+*.kml
